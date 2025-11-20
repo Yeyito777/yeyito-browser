@@ -513,6 +513,8 @@ class MainWindow(QWidget):
         message.global_bridge.flush()
         message.global_bridge.clear_messages.connect(
             self._messageview.clear_messages)
+        self._messageview.release_focus.connect(
+            self.tabbed_browser.on_release_focus)
 
         # statusbar
         self.tabbed_browser.current_tab_changed.connect(

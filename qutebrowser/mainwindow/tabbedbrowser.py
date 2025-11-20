@@ -863,12 +863,12 @@ class TabbedBrowser(QWidget):
 
     @pyqtSlot()
     def on_release_focus(self):
-        """Give keyboard focus to the current tab when requested by statusbar/prompt.
+        """Return keyboard focus to the current tab when requested externally.
 
-        This gets emitted by the statusbar and prompt container before they call .hide()
-        on themselves, with the idea that we can explicitly reassign the focus,
-        instead of Qt implicitly calling its QWidget::focusNextPrevChild() method,
-        finding a new widget to give keyboard focus to.
+        This slot reacts to signals from the statusbar/commandline and prompt
+        container when they hide or otherwise relinquish focus, so we can
+        explicitly reassign it instead of Qt implicitly calling
+        QWidget::focusNextPrevChild() to find some other widget.
         """
         widget = qtutils.add_optional(self.widget.currentWidget())
         if widget is None:

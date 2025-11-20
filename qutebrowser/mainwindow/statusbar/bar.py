@@ -140,7 +140,9 @@ class StatusBar(QWidget):
         moved: Emitted when the statusbar has moved, so the completion widget
                can move to the right position.
                arg: The new position.
-        release_focus: Emitted just before the statusbar is hidden.
+        release_focus: Emitted when focus should return to the tab, e.g.
+                       just before the statusbar is hidden or the command
+                       widget is dismissed.
     """
 
     resized = pyqtSignal('QRect')
@@ -372,6 +374,7 @@ class StatusBar(QWidget):
         """Show temporary text instead of command widget."""
         log.statusbar.debug("Hiding cmd widget")
         self._stack.setCurrentWidget(self.txt)
+        self.release_focus.emit()
         self.maybe_hide()
 
     @pyqtSlot(str)

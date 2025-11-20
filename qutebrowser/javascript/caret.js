@@ -846,7 +846,8 @@ window._qutebrowser.caret = (function() {
             }
         `;
         const node = document.createElement("style");
-        node.innerHTML = style;
+        // Avoid Trusted Types / innerHTML restrictions by assigning plain text.
+        node.textContent = style;
         document.body.appendChild(node);
     };
 

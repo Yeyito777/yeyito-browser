@@ -11,6 +11,7 @@ from qutebrowser.qt.core import pyqtSlot, pyqtSignal, Qt
 from qutebrowser.qt.widgets import QWidget, QVBoxLayout, QLabel, QSizePolicy
 
 from qutebrowser.config import config, stylesheet
+from qutebrowser.misc import objects
 from qutebrowser.utils import usertypes, message
 
 
@@ -93,6 +94,7 @@ class MessageView(QWidget):
     """Widget which stacks error/warning/info messages."""
 
     update_geometry = pyqtSignal()
+    release_focus = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -101,6 +103,7 @@ class MessageView(QWidget):
         self._vbox.setContentsMargins(0, 0, 0, 0)
         self._vbox.setSpacing(0)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         self._clear_timer = usertypes.Timer()
         self._clear_timer.timeout.connect(self.clear_messages)
@@ -131,6 +134,7 @@ class MessageView(QWidget):
         self._last_info = None
         self.hide()
         self._clear_timer.stop()
+        self._maybe_release_focus()
 
     @pyqtSlot(message.MessageInfo)
     def show_message(self, info: message.MessageInfo) -> None:
@@ -153,6 +157,7 @@ class MessageView(QWidget):
         self._last_info = info
         self.show()
         self.update_geometry.emit()
+        self._maybe_release_focus()
         if config.val.messages.timeout != 0:
             self._set_clear_timer_interval()
             self._clear_timer.start()
@@ -161,3 +166,7 @@ class MessageView(QWidget):
         """Clear messages when they are clicked on."""
         if e.button() in [Qt.MouseButton.LeftButton, Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton]:
             self.clear_messages()
+
+    def _maybe_release_focus(self) -> None:
+        """Restore focus to the current tab after message changes."""
+        self.release_focus.emit()
