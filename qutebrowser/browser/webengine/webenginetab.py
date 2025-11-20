@@ -485,6 +485,7 @@ class WebEngineScroller(browsertab.AbstractScroller):
     """QtWebEngine implementations related to scrolling."""
 
     _widget: webview.WebEngineView
+    _ARROW_SCROLL_PX = 40
 
     def __init__(self, tab, parent=None):
         super().__init__(tab, parent)
@@ -501,6 +502,18 @@ class WebEngineScroller(browsertab.AbstractScroller):
         """Send count fake key presses to this scroller's WebEngineTab."""
         for _ in range(min(count, 1000)):
             self._tab.fake_key_press(key, modifier)
+
+    def _scroll_with_js_or_key(self, key, dx: int, dy: int, count: int) -> None:
+        """Try to scroll the focused container via JS, otherwise fall back."""
+        px_dx = dx * count * self._ARROW_SCROLL_PX
+        px_dy = dy * count * self._ARROW_SCROLL_PX
+
+        def _fallback_if_needed(handled: bool) -> None:
+            if not handled:
+                self._repeated_key_press(key, count)
+
+        code = javascript.assemble('scroll', 'scroll_focused', px_dx, px_dy)
+        self._tab.run_js_async(code, _fallback_if_needed)
 
     @pyqtSlot(QPointF)
     def _update_pos(self, pos):
@@ -576,16 +589,16 @@ class WebEngineScroller(browsertab.AbstractScroller):
         self._tab.run_js_async(js_code)
 
     def up(self, count=1):
-        self._repeated_key_press(Qt.Key.Key_Up, count)
+        self._scroll_with_js_or_key(Qt.Key.Key_Up, 0, -1, count)
 
     def down(self, count=1):
-        self._repeated_key_press(Qt.Key.Key_Down, count)
+        self._scroll_with_js_or_key(Qt.Key.Key_Down, 0, 1, count)
 
     def left(self, count=1):
-        self._repeated_key_press(Qt.Key.Key_Left, count)
+        self._scroll_with_js_or_key(Qt.Key.Key_Left, -1, 0, count)
 
     def right(self, count=1):
-        self._repeated_key_press(Qt.Key.Key_Right, count)
+        self._scroll_with_js_or_key(Qt.Key.Key_Right, 1, 0, count)
 
     def top(self):
         self._tab.fake_key_press(Qt.Key.Key_Home)

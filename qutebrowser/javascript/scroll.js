@@ -56,5 +56,61 @@ window._qutebrowser.scroll = (function() {
         window.scrollBy(dx, dy);
     };
 
+    const _scrollableOverflows = new Set(["auto", "scroll", "overlay"]);
+
+    const _isScrollable = (elem, dx, dy) => {
+        const style = window.getComputedStyle(elem);
+        const canScrollY = dy !== 0 && _scrollableOverflows.has(style.overflowY) &&
+            elem.scrollHeight > elem.clientHeight;
+        const canScrollX = dx !== 0 && _scrollableOverflows.has(style.overflowX) &&
+            elem.scrollWidth > elem.clientWidth;
+        return canScrollX || canScrollY;
+    };
+
+    const _deepActiveElement = (root = document) => {
+        const active = root.activeElement;
+        if (!active) {
+            return active;
+        }
+
+        if (active.shadowRoot && active.shadowRoot.activeElement) {
+            return _deepActiveElement(active.shadowRoot);
+        }
+
+        return active;
+    };
+
+    const _findScrollable = (start, dx, dy) => {
+        const doc = document.documentElement;
+        const body = document.body;
+        let current = start;
+
+        while (current && current !== body && current !== doc) {
+            if (_isScrollable(current, dx, dy)) {
+                return current;
+            }
+            current = current.parentElement;
+        }
+
+        return null;
+    };
+
+    funcs.scroll_focused = (dx, dy) => {
+        const active = _deepActiveElement();
+
+        if (!active || active === document.body || active === document.documentElement) {
+            return false;
+        }
+
+        const scrollTarget = _findScrollable(active, dx, dy);
+
+        if (!scrollTarget) {
+            return false;
+        }
+
+        scrollTarget.scrollBy(dx, dy);
+        return true;
+    };
+
     return funcs;
 })();
