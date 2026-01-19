@@ -869,7 +869,22 @@ class TabbedBrowser(QWidget):
         container when they hide or otherwise relinquish focus, so we can
         explicitly reassign it instead of Qt implicitly calling
         QWidget::focusNextPrevChild() to find some other widget.
+
+        Only releases focus if we're in normal mode, to avoid stealing focus
+        from command mode, caret mode, or other modes when messages appear/disappear.
         """
+        # Don't steal focus if we're in a non-normal mode (e.g., command mode,
+        # caret mode). The statusbar and prompt container emit release_focus
+        # AFTER leaving their mode, so mode will be normal when appropriate.
+        try:
+            mode_manager = modeman.instance(self._win_id)
+            if mode_manager.mode != usertypes.KeyMode.normal:
+                log.modes.debug(
+                    f"Focus release ignored, in mode {mode_manager.mode}")
+                return
+        except modeman.UnavailableError:
+            pass  # Mode manager not initialized yet, allow focus release
+
         widget = qtutils.add_optional(self.widget.currentWidget())
         if widget is None:
             return
