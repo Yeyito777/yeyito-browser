@@ -330,7 +330,20 @@ class WebEngineCaret(browsertab.AbstractCaret):
             return
 
         self.drop_selection()
-        self._js_call('disableCaret')
+        self._js_call('disableCaret', callback=self._restore_focus)
+
+    def _restore_focus(self, _result):
+        """Restore keyboard focus after disabling caret mode.
+
+        This is called as a callback after disableCaret JS completes to ensure
+        proper timing. We focus the focusProxy (render widget) for QtWebEngine.
+        """
+        if self._widget is not None:
+            fp = self._widget.focusProxy()
+            if fp is not None:
+                fp.setFocus()
+            else:
+                self._widget.setFocus()
 
     def move_to_next_line(self, count=1):
         self._js_call('moveDown', count)
