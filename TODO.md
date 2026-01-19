@@ -8,6 +8,7 @@
 - "Unknown error while getting elements" Is so fucking annoying when I press f
 - The fake click that is sent on hinting may not click on the desired item
 - Check if css styles are being applied twice. (double-mapping) a way to fix this would be to allow an exclude: List[str] option which excludes other themes from being loaded onto a page by other themes?
+- Hovering over an element with Ctrl+k then pressing f sometimes unhovers? (I think conditions have to be just right such that I'm bareeely hovering over it?)
 
 # Improvements
 - Add fine-grained selectors. f should highlight all elements with click events, right click all with right click events, and hover all with hover events. + extras for all those

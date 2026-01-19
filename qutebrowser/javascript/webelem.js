@@ -404,6 +404,9 @@ window._qutebrowser.webelem = (function() {
 
     funcs.move_cursor_to_end = (id) => {
         const elem = elements[id];
+        if (elem.value === undefined) {
+            return;
+        }
         elem.selectionStart = elem.value.length;
         elem.selectionEnd = elem.value.length;
     };
