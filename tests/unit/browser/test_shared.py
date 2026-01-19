@@ -49,6 +49,27 @@ def test_accept_language_no_fallback(config_stub, url, fallback, expected):
     assert (b"Accept-Language" in dict(headers)) == expected
 
 
+def test_user_stylesheets_patterns(config_stub, tmp_path):
+    default_css = tmp_path / "default.css"
+    default_css.write_text("body { color: red; }")
+    youtube_css = tmp_path / "youtube.css"
+    youtube_css.write_text("body { color: blue; }")
+
+    config_stub.set_obj('content.user_stylesheets', [str(default_css)])
+    config_stub.set_obj(
+        'content.user_stylesheets',
+        [str(youtube_css)],
+        pattern='https://www.youtube.com/*',
+    )
+
+    generic = shared.get_user_stylesheet(url=QUrl("https://example.com"))
+    youtube = shared.get_user_stylesheet(
+        url=QUrl("https://www.youtube.com/watch?v=1"))
+
+    assert generic == default_css.read_text()
+    assert youtube == youtube_css.read_text()
+
+
 @pytest.mark.parametrize(
     (
         "levels_setting, excludes_setting, level, source, msg, expected_ret, "

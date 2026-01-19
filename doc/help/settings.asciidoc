@@ -2819,6 +2819,8 @@ Default: +pass:[allow-from-user-interaction]+
 === content.user_stylesheets
 List of user stylesheet filenames to use.
 
+This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
+
 Type: <<types,List of File&#44; or File>>
 
 Default: empty

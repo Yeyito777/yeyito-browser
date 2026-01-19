@@ -1056,6 +1056,7 @@ class _WebEngineScripts(QObject):
     def connect_signals(self):
         """Connect signals to our private slots."""
         config.instance.changed.connect(self._on_config_changed)
+        self._tab.url_changed.connect(self._on_url_changed)
 
         self._tab.search.cleared.connect(functools.partial(
             self._update_stylesheet, searching=False))
@@ -1064,13 +1065,23 @@ class _WebEngineScripts(QObject):
     @pyqtSlot(str)
     def _on_config_changed(self, option):
         if option in ['scrolling.bar', 'content.user_stylesheets']:
-            self._init_stylesheet()
-            self._update_stylesheet()
+            url = self._tab.url()
+            self._init_stylesheet(url=url)
+            self._update_stylesheet(url=url)
+
+    @pyqtSlot(QUrl)
+    def _on_url_changed(self, url):
+        if not url.isValid():
+            return
+        self._init_stylesheet(url=url)
+        self._update_stylesheet(url=url)
 
     @pyqtSlot(bool)
-    def _update_stylesheet(self, searching=False):
+    def _update_stylesheet(self, searching=False, url=None):
         """Update the custom stylesheet in existing tabs."""
-        css = shared.get_user_stylesheet(searching=searching)
+        if url is None or not url.isValid():
+            url = self._tab.url()
+        css = shared.get_user_stylesheet(url=url, searching=searching)
         code = javascript.assemble('stylesheet', 'set_css', css)
         self._tab.run_js_async(code)
 
@@ -1115,20 +1126,28 @@ class _WebEngineScripts(QObject):
         self._inject_all_greasemonkey_scripts()
         self._inject_site_specific_quirks()
 
-    def _init_stylesheet(self):
+    def _init_stylesheet(self, url=None):
         """Initialize custom stylesheets.
 
         Partially inspired by QupZilla:
         https://github.com/QupZilla/qupzilla/blob/v2.0/src/lib/app/mainapplication.cpp#L1063-L1101
         """
+        if url is None or not url.isValid():
+            url = self._tab.url()
         self._remove_js('stylesheet')
-        css = shared.get_user_stylesheet()
+        css = shared.get_user_stylesheet(url=url)
         js_code = javascript.wrap_global(
             'stylesheet',
             resources.read_file('javascript/stylesheet.js'),
             javascript.assemble('stylesheet', 'set_css', css),
         )
         self._inject_js('stylesheet', js_code, subframes=True)
+
+    def prepare_for_url(self, url: QUrl) -> None:
+        """Update the injected stylesheet ahead of a navigation."""
+        if not url.isValid():
+            return
+        self._init_stylesheet(url=url)
 
     @pyqtSlot()
     def _inject_all_greasemonkey_scripts(self):
@@ -1705,6 +1724,7 @@ class WebEngineTab(browsertab.AbstractTab):
             return
 
         self.settings.update_for_url(navigation.url)
+        self._scripts.prepare_for_url(navigation.url)
 
     def _on_select_client_certificate(self, selection):
         """Handle client certificates.

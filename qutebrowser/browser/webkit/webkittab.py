@@ -23,6 +23,7 @@ from qutebrowser.browser import browsertab, shared
 from qutebrowser.browser.webkit import (webview, webpage, tabhistory, webkitelem,
                                         webkitsettings, webkitinspector)
 from qutebrowser.browser.webkit.network import networkmanager
+from qutebrowser.config import config
 from qutebrowser.utils import qtutils, usertypes, utils, log, debug, resources
 from qutebrowser.keyinput import modeman
 from qutebrowser.qt import sip
@@ -880,6 +881,7 @@ class WebKitTab(browsertab.AbstractTab):
         self.settings = webkitsettings.WebKitSettings(settings=None)
         self._set_widget(widget)
         self._connect_signals()
+        self._apply_user_stylesheet()
         self.backend = usertypes.Backend.QtWebKit
 
     def _install_event_filter(self):
@@ -988,6 +990,12 @@ class WebKitTab(browsertab.AbstractTab):
     def _on_contents_size_changed(self, size):
         self.contents_size_changed.emit(QSizeF(size))
 
+    def _apply_user_stylesheet(self, url: Optional[QUrl] = None) -> None:
+        """Apply the user stylesheet for the given URL to this tab."""
+        if url is None:
+            url = self.url()
+        webkitsettings._set_user_stylesheet(self._widget.settings(), url=url)
+
     @pyqtSlot(usertypes.NavigationRequest)
     def _on_navigation_request(self, navigation):
         super()._on_navigation_request(navigation)
@@ -1012,6 +1020,12 @@ class WebKitTab(browsertab.AbstractTab):
 
         if navigation.is_main_frame:
             self.settings.update_for_url(navigation.url)
+            self._apply_user_stylesheet(navigation.url)
+
+    @pyqtSlot(str)
+    def _on_stylesheet_config_changed(self, option: str):
+        if option in ['scrolling.bar', 'content.user_stylesheets']:
+            self._apply_user_stylesheet()
 
     @pyqtSlot('QNetworkReply*')
     def _on_ssl_errors(self, reply):
@@ -1044,6 +1058,7 @@ class WebKitTab(browsertab.AbstractTab):
             self._on_frame_created)
         frame.contentsSizeChanged.connect(  # type: ignore[attr-defined]
             self._on_contents_size_changed)
+        config.instance.changed.connect(self._on_stylesheet_config_changed)
         frame.initialLayoutCompleted.connect(  # type: ignore[attr-defined]
             self._on_history_trigger)
         page.navigation_request.connect(  # type: ignore[attr-defined]

@@ -306,7 +306,7 @@ def feature_permission(url, option, msg, yes_action, no_action, abort_on,
     """Handle a feature permission request.
 
     Args:
-        url: The URL the request was done for.
+    url: The URL the request was done for.
         option: An option name to check.
         msg: A string like "show notifications"
         yes_action: A callable to call if the request was approved
@@ -384,10 +384,13 @@ def get_tab(win_id, target):
     raise ValueError(f"Invalid ClickTarget {target}")
 
 
-def get_user_stylesheet(searching=False):
+def get_user_stylesheet(*, url: Optional[QUrl] = None, searching: bool = False):
     """Get the combined user-stylesheet."""
     css = ''
-    stylesheets = config.val.content.user_stylesheets
+    if url is not None and not url.isValid():
+        url = None
+
+    stylesheets = config.instance.get('content.user_stylesheets', url=url)
 
     for filename in stylesheets:
         with open(filename, 'r', encoding='utf-8') as f:

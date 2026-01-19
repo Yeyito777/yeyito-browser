@@ -116,9 +116,9 @@ class WebKitSettings(websettings.AbstractSettings):
     }
 
 
-def _set_user_stylesheet(settings):
+def _set_user_stylesheet(settings, *, url: QUrl = None):
     """Set the generated user-stylesheet."""
-    stylesheet = shared.get_user_stylesheet().encode('utf-8')
+    stylesheet = shared.get_user_stylesheet(url=url).encode('utf-8')
     url = urlutils.data_url('text/css;charset=utf-8', stylesheet)
     settings.setUserStyleSheetUrl(url)
 
