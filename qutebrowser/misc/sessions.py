@@ -10,6 +10,8 @@ import itertools
 import urllib
 import shutil
 import pathlib
+import tempfile
+import time
 from typing import Any, Optional, Union, cast
 from collections.abc import Iterable, MutableMapping, MutableSequence
 
@@ -27,6 +29,74 @@ from qutebrowser.misc import objects, throttle
 
 
 _JsonType = MutableMapping[str, Any]
+
+# Recovery directory for backed up sessions
+RECOVERY_DIR = pathlib.Path(tempfile.gettempdir()) / 'qutebrowser-recovery'
+
+
+def _get_recovery_path():
+    """Get the recovery directory path, creating it if necessary."""
+    RECOVERY_DIR.mkdir(exist_ok=True)
+    return RECOVERY_DIR
+
+
+def _backup_to_recovery(session_path, session_name):
+    """Backup a session file to the recovery directory.
+
+    Args:
+        session_path: The full path to the session file.
+        session_name: The name of the session (without .yml extension).
+    """
+    if not os.path.exists(session_path):
+        return
+
+    recovery_dir = _get_recovery_path()
+    # Use timestamp to make backups unique
+    timestamp = int(time.time() * 1000)
+    backup_name = f"{session_name}_{timestamp}.yml"
+    backup_path = recovery_dir / backup_name
+
+    try:
+        shutil.copy2(session_path, backup_path)
+        log.sessions.debug(f"Backed up session {session_name} to {backup_path}")
+    except OSError as e:
+        log.sessions.warning(f"Failed to backup session {session_name}: {e}")
+
+
+def list_recovery_sessions():
+    """Get a list of all recovery session files with their info.
+
+    Returns:
+        A list of tuples (display_name, full_path, timestamp) sorted by timestamp
+        (most recent first).
+    """
+    recovery_dir = _get_recovery_path()
+    sessions = []
+
+    for filename in os.listdir(recovery_dir):
+        if not filename.endswith('.yml'):
+            continue
+
+        full_path = recovery_dir / filename
+        # Parse filename: name_timestamp.yml
+        base = filename[:-4]  # Remove .yml
+        parts = base.rsplit('_', 1)
+
+        if len(parts) == 2:
+            name, timestamp_str = parts
+            try:
+                timestamp = int(timestamp_str)
+            except ValueError:
+                timestamp = 0
+        else:
+            name = base
+            timestamp = 0
+
+        sessions.append((name, str(full_path), timestamp))
+
+    # Sort by timestamp, most recent first
+    sessions.sort(key=lambda x: x[2], reverse=True)
+    return sessions
 
 
 class Sentinel:
@@ -328,6 +398,11 @@ class SessionManager(QObject):
         name = self._get_session_name(name)
         path = self._get_session_path(name)
 
+        # Backup existing session to recovery before overwriting
+        # (skip internal sessions like _autosave and _restart)
+        if os.path.exists(path) and not name.startswith('_'):
+            _backup_to_recovery(path, name)
+
         log.sessions.debug("Saving session {} to {}...".format(name, path))
         if last_window:
             data = self._last_window_session
@@ -511,6 +586,12 @@ class SessionManager(QObject):
     def delete(self, name):
         """Delete a session."""
         path = self._get_session_path(name, check_exists=True)
+
+        # Backup session to recovery before deleting
+        # (skip internal sessions like _autosave and _restart)
+        if not name.startswith('_'):
+            _backup_to_recovery(path, name)
+
         try:
             os.remove(path)
         except OSError as e:
@@ -667,3 +748,123 @@ def load_default(name):
     # If this was a _restart session, delete it.
     if name == '_restart':
         session_manager.delete('_restart')
+
+
+@cmdutils.register()
+def recover_list() -> None:
+    """List all recoverable sessions from /tmp.
+
+    Sessions are backed up to /tmp/qutebrowser-recovery/ before being
+    overwritten or deleted. This command lists all available recovery sessions.
+    """
+    import datetime
+    sessions = list_recovery_sessions()
+
+    if not sessions:
+        message.info("No recovery sessions found in {}".format(RECOVERY_DIR))
+        return
+
+    lines = ["Recovery sessions (most recent first):"]
+    for name, path, timestamp in sessions:
+        if timestamp:
+            dt = datetime.datetime.fromtimestamp(timestamp / 1000)
+            time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            time_str = "unknown"
+        # Create display name from filename (without path and .yml)
+        filename = os.path.basename(path)[:-4]  # Remove .yml
+        lines.append("  {} ({})".format(filename, time_str))
+
+    message.info("\n".join(lines))
+
+
+@cmdutils.register()
+@cmdutils.argument('name', completion=miscmodels.recovery_session)
+def recover_load(name: str) -> None:
+    """Load a recovery session in a new window.
+
+    Args:
+        name: The filename of the recovery session (without .yml extension),
+              or the full path to the session file.
+    """
+    recovery_dir = _get_recovery_path()
+
+    # Check if name is a full path or just the filename
+    if os.path.isabs(name) and os.path.exists(name):
+        path = name
+    else:
+        # Try to find the session in the recovery directory
+        path = str(recovery_dir / (name + '.yml'))
+
+    if not os.path.exists(path):
+        raise cmdutils.CommandError(
+            "Recovery session '{}' not found!".format(name))
+
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = utils.yaml_load(f)
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as e:
+        raise cmdutils.CommandError(
+            "Error loading recovery session: {}".format(e))
+
+    if data is None:
+        raise cmdutils.CommandError("Got empty session file")
+
+    log.sessions.debug("Loading recovery session from {}...".format(path))
+
+    if qtutils.is_single_process():
+        if any(win.get('private') for win in data['windows']):
+            raise cmdutils.CommandError(
+                "Can't load a session with private windows in single process mode.")
+
+    # Load windows from the recovery session
+    for win in data['windows']:
+        session_manager._load_window(win)
+
+    message.info("Loaded recovery session from {}".format(
+        os.path.basename(path)))
+
+
+@cmdutils.register()
+def recover_last() -> None:
+    """Load the most recent recovery session in a new window.
+
+    This is a convenience command that loads the most recently backed up
+    session without having to look up its name.
+    """
+    sessions = list_recovery_sessions()
+
+    if not sessions:
+        raise cmdutils.CommandError(
+            "No recovery sessions found in {}".format(RECOVERY_DIR))
+
+    # Get the most recent session (first in the list)
+    name, path, _timestamp = sessions[0]
+    filename = os.path.basename(path)[:-4]  # Remove .yml
+
+    # Use recover_load to actually load it
+    recover_load(filename)
+
+
+@cmdutils.register()
+def recover_current() -> None:
+    """Load the current session in a new window.
+
+    This opens the currently loaded session in a new window, useful for
+    restoring tabs from the last saved state of the current session.
+    """
+    current = session_manager.current
+    if current is None:
+        current = 'default'
+
+    if not session_manager.exists(current):
+        raise cmdutils.CommandError(
+            "Session '{}' not found!".format(current))
+
+    try:
+        session_manager.load(current, temp=True)
+    except SessionError as e:
+        raise cmdutils.CommandError(
+            "Error loading session: {}".format(e))
+
+    message.info("Loaded session '{}' in new window(s)".format(current))

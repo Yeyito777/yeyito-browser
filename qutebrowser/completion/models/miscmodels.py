@@ -88,6 +88,30 @@ def session(*, info=None):
     return model
 
 
+def recovery_session(*, info=None):
+    """A CompletionModel filled with recovery session names."""
+    import os
+    from qutebrowser.misc import sessions
+    utils.unused(info)
+    model = completionmodel.CompletionModel(column_widths=(50, 50, 0))
+    try:
+        recovery_sessions = sessions.list_recovery_sessions()
+        # Format: (filename, timestamp_display)
+        sess = []
+        for _name, path, timestamp in recovery_sessions:
+            filename = os.path.basename(path)[:-4]  # Remove .yml
+            if timestamp:
+                ts = datetime.datetime.fromtimestamp(timestamp / 1000)
+                time_str = ts.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                time_str = "unknown"
+            sess.append((filename, time_str))
+        model.add_category(listcategory.ListCategory("Recovery Sessions", sess))
+    except OSError:
+        log.completion.exception("Failed to list recovery sessions!")
+    return model
+
+
 def _tabs(*, win_id_filter=lambda _win_id: True, add_win_id=True, cur_win_id=None):
     """Helper to get the completion model for tabs/other_tabs.
 
