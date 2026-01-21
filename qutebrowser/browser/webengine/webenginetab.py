@@ -820,8 +820,7 @@ class WebEngineElements(browsertab.AbstractElements):
             elem = webengineelem.WebEngineElement(js_elem, tab=self._tab)
             callback(elem)
 
-    def find_css(self, selector, callback, error_cb, *,
-                 only_visible=False):
+    def find_css(self, selector, callback, error_cb, *, only_visible=False):
         js_code = javascript.assemble('webelem', 'find_css', selector,
                                       only_visible)
         js_cb = functools.partial(self._js_cb_multiple, selector, callback, error_cb)

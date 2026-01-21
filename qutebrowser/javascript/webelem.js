@@ -191,6 +191,83 @@ window._qutebrowser.webelem = (function() {
         }
     }
 
+    // Find elements that have CSS :hover rules defined in stylesheets
+    // Returns an array of [element, frame] pairs
+    function find_elements_with_css_hover(containers) {
+        const uniqueSelectors = new Set();  // Collect unique base selectors first
+
+        // Helper to extract base selectors from a :hover selector
+        // e.g., ".message:hover" -> ".message"
+        // e.g., ".card:hover .icon" -> ".card"
+        function extractBaseSelectors(selectorText) {
+            const selectors = selectorText.split(",");
+            for (const sel of selectors) {
+                if (sel.includes(":hover")) {
+                    const hoverIndex = sel.indexOf(":hover");
+                    const basePart = sel.substring(0, hoverIndex).trim();
+                    if (basePart) {
+                        uniqueSelectors.add(basePart);
+                    }
+                }
+            }
+        }
+
+        // Helper to process a CSS rule (just collects selectors, no DOM queries)
+        function processRule(rule) {
+            if (rule.type === CSSRule.STYLE_RULE && rule.selectorText) {
+                if (rule.selectorText.includes(":hover")) {
+                    extractBaseSelectors(rule.selectorText);
+                }
+            }
+            // Handle nested rules (media queries, supports, etc.)
+            else if (rule.cssRules) {
+                for (const nestedRule of rule.cssRules) {
+                    processRule(nestedRule);
+                }
+            }
+        }
+
+        // Phase 1: Scan all stylesheets and collect unique selectors
+        for (const sheet of document.styleSheets) {
+            let rules;
+            try {
+                rules = sheet.cssRules || sheet.rules;
+            } catch (e) {
+                // Cross-origin stylesheet, skip it
+                continue;
+            }
+
+            if (!rules) {
+                continue;
+            }
+
+            for (const rule of rules) {
+                processRule(rule);
+            }
+        }
+
+        // Phase 2: Query DOM once per unique selector
+        const elemSet = new Set();
+        const result = [];
+
+        for (const selector of uniqueSelectors) {
+            for (const [container, frame] of containers) {
+                try {
+                    for (const elem of container.querySelectorAll(selector)) {
+                        if (!elemSet.has(elem)) {
+                            elemSet.add(elem);
+                            result.push([elem, frame]);
+                        }
+                    }
+                } catch (e) {
+                    // Invalid selector, skip
+                }
+            }
+        }
+
+        return result;
+    }
+
     // Recursively finds elements from DOM that have a shadowRoot
     // and returns the shadow roots in a list
     function find_shadow_roots(container = document) {
@@ -206,6 +283,23 @@ window._qutebrowser.webelem = (function() {
     }
 
     funcs.find_css = (selector, only_visible) => {
+        const DEBUG_TIMING = selector.includes(":qb-hover");  // Only time hover queries
+        if (DEBUG_TIMING) {
+            console.time("find_css total");
+        }
+
+        // Check for special :qb-hover marker to include CSS hover elements
+        const includeCssHover = selector.includes(":qb-hover");
+        if (includeCssHover) {
+            // Remove the marker from the selector
+            // Handle both ", :qb-hover" and ":qb-hover, " and standalone ":qb-hover"
+            selector = selector
+                .split(",")
+                .map((s) => s.trim())
+                .filter((s) => s !== ":qb-hover")
+                .join(", ");
+        }
+
         // Find all places where we need to look for elements:
         const containers = [[document, null]];
         // Same-domain iframes
@@ -219,24 +313,67 @@ window._qutebrowser.webelem = (function() {
             containers.push([root, null]);
         }
 
-        // Then find elements in all of them
+        // Find elements in all containers
         const elems = [];
-        for (const [container, frame] of containers) {
-            try {
-                for (const elem of container.querySelectorAll(selector)) {
-                    elems.push([elem, frame]);
+        const elemSet = new Set();  // Track elements to avoid duplicates
+
+        // Only query with selector if there's something left after removing :qb-hover
+        if (selector) {
+            if (DEBUG_TIMING) {
+                console.time("css selector query");
+            }
+            for (const [container, frame] of containers) {
+                try {
+                    for (const elem of container.querySelectorAll(selector)) {
+                        if (!elemSet.has(elem)) {
+                            elems.push([elem, frame]);
+                            elemSet.add(elem);
+                        }
+                    }
+                } catch (ex) {
+                    return {"success": false, "error": ex.toString()};
                 }
-            } catch (ex) {
-                return {"success": false, "error": ex.toString()};
+            }
+            if (DEBUG_TIMING) {
+                console.timeEnd("css selector query");
             }
         }
 
-        // Finally, filter by visibility
+        // If :qb-hover was specified, also find elements with CSS :hover rules
+        if (includeCssHover) {
+            if (DEBUG_TIMING) {
+                console.time("css hover detection");
+            }
+            const hoverElems = find_elements_with_css_hover(containers);
+            if (DEBUG_TIMING) {
+                console.timeEnd("css hover detection");
+                console.log(`Found ${hoverElems.length} elements with CSS :hover rules`);
+            }
+            for (const [elem, frame] of hoverElems) {
+                if (!elemSet.has(elem)) {
+                    elems.push([elem, frame]);
+                    elemSet.add(elem);
+                }
+            }
+        }
+
+        if (DEBUG_TIMING) {
+            console.log(`Total elements before visibility filter: ${elems.length}`);
+            console.time("visibility check + serialize");
+        }
+
+        // Filter by visibility and serialize
         const out = [];
         for (const [elem, frame] of elems) {
             if (!only_visible || is_visible(elem, frame)) {
                 out.push(serialize_elem(elem, frame));
             }
+        }
+
+        if (DEBUG_TIMING) {
+            console.timeEnd("visibility check + serialize");
+            console.log(`Elements after visibility filter: ${out.length}`);
+            console.timeEnd("find_css total");
         }
 
         return {"success": true, "result": out};

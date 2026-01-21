@@ -1871,6 +1871,19 @@ hints.selectors:
       - 'input:not([type])'
       - '[contenteditable]:not([contenteditable="false"])'
       - 'textarea'
+    hoverables:
+      - '[title]'
+      - '[data-tooltip]'
+      - '[data-tip]'
+      - '[aria-describedby]'
+      - '[onmouseover]'
+      - '[onmouseenter]'
+      - '[onmousemove]'
+      - '[role="article"]'
+      - '[aria-roledescription]'
+      - 'abbr'
+      - 'acronym'
+      - ':qb-hover'
   type:
     name: Dict
     keytype: String

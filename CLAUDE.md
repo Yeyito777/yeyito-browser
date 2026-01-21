@@ -6,7 +6,9 @@ The `.venv` directory contains a Python virtual environment with PyQt6 and test 
 
 ```bash
 source .venv/bin/activate
-PYTHONPATH=. pytest tests/unit/path/to/test.py -v
+QT_QPA_PLATFORM=offscreen PYTHONPATH=. pytest tests/unit/path/to/test.py -v
 ```
+
+The `QT_QPA_PLATFORM=offscreen` prevents Qt windows from appearing during tests.
 
 Available packages: PyQt6, PyQt6-WebEngine, pytest, pytest-qt, pytest-mock, hypothesis, and other pytest plugins.
