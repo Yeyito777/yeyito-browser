@@ -449,3 +449,7 @@ class AbstractWebElement(collections.abc.MutableMapping):  # type: ignore[type-a
         """Simulate a right-click on the element."""
         self._click_fake_event(usertypes.ClickTarget.normal,
                                button=Qt.MouseButton.RightButton)
+
+    def focus(self) -> None:
+        """Focus the element, blurring any currently focused element."""
+        raise NotImplementedError

@@ -73,6 +73,7 @@ class Target(enum.Enum):
     spawn = enum.auto()
     delete = enum.auto()
     right_click = enum.auto()
+    focus = enum.auto()
 
 
 class HintingError(Exception):
@@ -256,6 +257,8 @@ class HintActions:
                 elem.hover()
             elif context.target == Target.right_click:
                 elem.right_click()
+            elif context.target == Target.focus:
+                elem.focus()
             elif context.target == Target.current:
                 elem.remove_blank_target()
                 elem.click(target_mapping[context.target])
@@ -556,6 +559,7 @@ class HintManager(QObject):
         Target.javascript: "Run javascript via hint",
         Target.spawn: "Spawn command via hint",
         Target.delete: "Delete an element",
+        Target.focus: "Focus an element",
     }
 
     set_text = pyqtSignal(str)
@@ -1148,6 +1152,7 @@ class HintManager(QObject):
             Target.window: self._actions.click,
             Target.hover: self._actions.click,
             Target.right_click: self._actions.click,
+            Target.focus: self._actions.click,
             # _download needs a QWebElement to get the frame.
             Target.download: self._actions.download,
             Target.userscript: self._actions.call_userscript,

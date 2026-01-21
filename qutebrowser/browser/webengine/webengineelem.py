@@ -203,6 +203,9 @@ class WebEngineElement(webelem.AbstractWebElement):
     def delete(self) -> None:
         self._js_call('delete')
 
+    def focus(self) -> None:
+        self._js_call('focus_element')
+
     def _move_text_cursor(self) -> None:
         if self.is_text_input() and self.is_editable():
             self._js_call('move_cursor_to_end')

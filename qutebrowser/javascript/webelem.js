@@ -598,6 +598,15 @@ window._qutebrowser.webelem = (function() {
         elem.focus();
     };
 
+    funcs.focus_element = (id) => {
+        const elem = elements[id];
+        if (document.activeElement && document.activeElement !== elem) {
+            document.activeElement.blur();
+        }
+        elem.style.outline = "none";
+        elem.focus();
+    };
+
     funcs.move_cursor_to_end = (id) => {
         const elem = elements[id];
         if (elem.value === undefined) {
