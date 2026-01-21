@@ -1914,6 +1914,8 @@ hints.selectors:
       # Framework context menu patterns
       - '[data-context-menu]'
       - '[data-contextmenu]'
+    scrollables:
+      - ':qb-scrollable'
   type:
     name: Dict
     keytype: String

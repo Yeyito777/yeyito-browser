@@ -355,6 +355,55 @@ window._qutebrowser.webelem = (function() {
         return result;
     }
 
+    // Find elements that are scrollable (have overflow content and scroll/auto overflow)
+    // Returns an array of [element, frame] pairs
+    function find_scrollable_elements(containers) {
+        const result = [];
+        const elemSet = new Set();
+
+        function isScrollable(elem) {
+            // Check if element has overflow content
+            if (elem.scrollHeight <= elem.clientHeight &&
+                elem.scrollWidth <= elem.clientWidth) {
+                return false;
+            }
+
+            const style = window.getComputedStyle(elem);
+            const overflowY = style.overflowY || style.overflow;
+            const overflowX = style.overflowX || style.overflow;
+
+            return (
+                /auto|scroll/.test(overflowY) ||
+                /auto|scroll/.test(overflowX)
+            );
+        }
+
+        for (const [container, frame] of containers) {
+            // Always include the main scrolling element for each container
+            const doc = container.ownerDocument || container;
+            if (doc.scrollingElement && !elemSet.has(doc.scrollingElement)) {
+                // Check if the document itself is scrollable
+                const scrollEl = doc.scrollingElement;
+                if (scrollEl.scrollHeight > scrollEl.clientHeight ||
+                    scrollEl.scrollWidth > scrollEl.clientWidth) {
+                    elemSet.add(scrollEl);
+                    result.push([scrollEl, frame]);
+                }
+            }
+
+            // Find all scrollable elements in this container
+            const allElements = container.querySelectorAll("*");
+            for (const elem of allElements) {
+                if (!elemSet.has(elem) && isScrollable(elem)) {
+                    elemSet.add(elem);
+                    result.push([elem, frame]);
+                }
+            }
+        }
+
+        return result;
+    }
+
     // Recursively finds elements from DOM that have a shadowRoot
     // and returns the shadow roots in a list
     function find_shadow_roots(container = document) {
@@ -372,13 +421,15 @@ window._qutebrowser.webelem = (function() {
     funcs.find_css = (selector, only_visible) => {
         // Check for special :qb-hover marker to include CSS hover elements
         const includeCssHover = selector.includes(":qb-hover");
-        if (includeCssHover) {
-            // Remove the marker from the selector
-            // Handle both ", :qb-hover" and ":qb-hover, " and standalone ":qb-hover"
+        // Check for special :qb-scrollable marker to include scrollable elements
+        const includeScrollable = selector.includes(":qb-scrollable");
+
+        // Remove magic markers from the selector
+        if (includeCssHover || includeScrollable) {
             selector = selector
                 .split(",")
                 .map((s) => s.trim())
-                .filter((s) => s !== ":qb-hover")
+                .filter((s) => s !== ":qb-hover" && s !== ":qb-scrollable")
                 .join(", ");
         }
 
@@ -426,12 +477,24 @@ window._qutebrowser.webelem = (function() {
             }
         }
 
+        // If :qb-scrollable was specified, also find scrollable elements
+        if (includeScrollable) {
+            const scrollableElems = find_scrollable_elements(containers);
+            for (const [elem, frame] of scrollableElems) {
+                if (!elemSet.has(elem)) {
+                    elems.push([elem, frame]);
+                    elemSet.add(elem);
+                }
+            }
+        }
+
         // Filter by visibility and serialize
-        // Use lightweight serialization for hover detection (skips outerHTML, textContent, attributes)
+        // Use lightweight serialization for hover/scrollable detection (skips outerHTML, textContent, attributes)
+        const useLightweight = includeCssHover || includeScrollable;
         const out = [];
         for (const [elem, frame] of elems) {
             if (!only_visible || is_visible(elem, frame)) {
-                out.push(serialize_elem(elem, frame, includeCssHover));
+                out.push(serialize_elem(elem, frame, useLightweight));
             }
         }
 
