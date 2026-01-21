@@ -350,11 +350,6 @@ window._qutebrowser.webelem = (function() {
     }
 
     funcs.find_css = (selector, only_visible) => {
-        const DEBUG_TIMING = selector.includes(":qb-hover");  // Only time hover queries
-        if (DEBUG_TIMING) {
-            console.time("find_css total");
-        }
-
         // Check for special :qb-hover marker to include CSS hover elements
         const includeCssHover = selector.includes(":qb-hover");
         if (includeCssHover) {
@@ -386,9 +381,6 @@ window._qutebrowser.webelem = (function() {
 
         // Only query with selector if there's something left after removing :qb-hover
         if (selector) {
-            if (DEBUG_TIMING) {
-                console.time("css selector query");
-            }
             for (const [container, frame] of containers) {
                 try {
                     for (const elem of container.querySelectorAll(selector)) {
@@ -401,32 +393,17 @@ window._qutebrowser.webelem = (function() {
                     return {"success": false, "error": ex.toString()};
                 }
             }
-            if (DEBUG_TIMING) {
-                console.timeEnd("css selector query");
-            }
         }
 
         // If :qb-hover was specified, also find elements with CSS :hover rules
         if (includeCssHover) {
-            if (DEBUG_TIMING) {
-                console.time("css hover detection");
-            }
             const hoverElems = find_elements_with_css_hover(containers);
-            if (DEBUG_TIMING) {
-                console.timeEnd("css hover detection");
-                console.log(`Found ${hoverElems.length} elements with CSS :hover rules`);
-            }
             for (const [elem, frame] of hoverElems) {
                 if (!elemSet.has(elem)) {
                     elems.push([elem, frame]);
                     elemSet.add(elem);
                 }
             }
-        }
-
-        if (DEBUG_TIMING) {
-            console.log(`Total elements before visibility filter: ${elems.length}`);
-            console.time("visibility check + serialize");
         }
 
         // Filter by visibility and serialize
@@ -436,12 +413,6 @@ window._qutebrowser.webelem = (function() {
             if (!only_visible || is_visible(elem, frame)) {
                 out.push(serialize_elem(elem, frame, includeCssHover));
             }
-        }
-
-        if (DEBUG_TIMING) {
-            console.timeEnd("visibility check + serialize");
-            console.log(`Elements after visibility filter: ${out.length}`);
-            console.timeEnd("find_css total");
         }
 
         return {"success": true, "result": out};
