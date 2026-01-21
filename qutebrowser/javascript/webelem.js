@@ -143,7 +143,21 @@ window._qutebrowser.webelem = (function() {
             elem.classList.contains("custom-control-input")
         );
 
-        return (invisible || none_display || (zero_opacity && !is_framework));
+        if (invisible || none_display || (zero_opacity && !is_framework)) {
+            return true;
+        }
+
+        // Check if any ancestor has opacity: 0 (e.g., Discord's hover widgets)
+        let parent = elem.parentElement;
+        while (parent && parent !== document.body) {
+            const parentStyle = win.getComputedStyle(parent, null);
+            if (parentStyle.getPropertyValue("opacity") === "0") {
+                return true;
+            }
+            parent = parent.parentElement;
+        }
+
+        return false;
     }
 
     function is_visible(elem, frame = null) {
@@ -165,6 +179,12 @@ window._qutebrowser.webelem = (function() {
                 rect.bottom < 0 ||
                 rect.left > window.innerWidth ||
                 rect.right < 0) {
+            return false;
+        }
+
+        // Skip elements that are too small to be useful (e.g., 1px wide hidden elements)
+        const MIN_SIZE = 4;
+        if (rect.width < MIN_SIZE || rect.height < MIN_SIZE) {
             return false;
         }
 
