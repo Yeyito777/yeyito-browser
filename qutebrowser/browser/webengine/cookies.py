@@ -32,7 +32,17 @@ def _accept_cookie(request):
     if accept == 'all':
         return True
     elif accept in ['no-3rdparty', 'no-unknown-3rdparty']:
-        return not request.thirdParty
+        if not request.thirdParty:
+            return True
+        # Check if third-party origin is whitelisted
+        origin = request.origin
+        if origin.isValid():
+            whitelist = config.instance.get('content.cookies.thirdparty_whitelist')
+            if any(pattern.matches(origin) for pattern in whitelist):
+                if 'log-cookies' in objects.debug_flags:
+                    log.network.debug('Third-party cookie allowed via whitelist')
+                return True
+        return False
     elif accept == 'never':
         return False
     else:

@@ -555,6 +555,25 @@ content.cookies.store:
   type: Bool
   desc: Store cookies.
 
+content.cookies.thirdparty_whitelist:
+  default: []
+  type:
+    name: List
+    valtype: UrlPattern
+    none_ok: true
+  desc: >-
+    A list of URL patterns for third-party domains that should be allowed to
+    set and send cookies, even when content.cookies.accept is set to
+    no-3rdparty or no-unknown-3rdparty.
+
+    This is useful for services like hCaptcha that require their accessibility
+    cookies to work when embedded on other sites.
+
+    The pattern is matched against the cookie's origin domain (the third-party
+    requesting to set the cookie), not the first-party page URL.
+
+    Example: `["*.hcaptcha.com", "accounts.google.com"]`
+
 content.default_encoding:
   type: String
   default: iso-8859-1

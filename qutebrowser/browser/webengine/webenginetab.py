@@ -764,15 +764,31 @@ class WebEngineElements(browsertab.AbstractElements):
 
     _tab: 'WebEngineTab'
 
-    def _js_cb_multiple(self, callback, error_cb, js_elems):
+    def _js_cb_multiple(self, selector, callback, error_cb, js_elems):
         """Handle found elements coming from JS and call the real callback.
 
         Args:
+            selector: The CSS selector that was used (for logging).
             callback: The callback to call with the found elements.
             error_cb: The callback to call in case of an error.
             js_elems: The elements serialized from javascript.
         """
         if js_elems is None:
+            url = self._tab.url().toDisplayString()
+            is_deleted = sip.isdeleted(self._tab._widget)
+            log.webview.error(
+                f"JavaScript returned None for element query. "
+                f"URL: {url}, selector: {selector!r}, widget_deleted: {is_deleted}. "
+                f"This may indicate the page's JS context is invalid or scripts "
+                f"weren't injected properly."
+            )
+            # Run diagnostic to check if _qutebrowser namespace exists
+            self._tab.run_js_async(
+                '"use strict"; typeof window._qutebrowser !== "undefined"',
+                lambda exists: log.webview.error(
+                    f"Diagnostic: window._qutebrowser exists: {exists}"
+                )
+            )
             error_cb(webelem.Error("Unknown error while getting "
                                    "elements"))
             return
@@ -808,7 +824,7 @@ class WebEngineElements(browsertab.AbstractElements):
                  only_visible=False):
         js_code = javascript.assemble('webelem', 'find_css', selector,
                                       only_visible)
-        js_cb = functools.partial(self._js_cb_multiple, callback, error_cb)
+        js_cb = functools.partial(self._js_cb_multiple, selector, callback, error_cb)
         self._tab.run_js_async(js_code, js_cb)
 
     def find_id(self, elem_id, callback):

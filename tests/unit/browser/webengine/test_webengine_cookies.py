@@ -83,6 +83,97 @@ def test_logging(monkeypatch, config_stub, filter_request, caplog, enabled):
         assert not caplog.messages
 
 
+class TestThirdPartyWhitelist:
+    """Tests for content.cookies.thirdparty_whitelist setting."""
+
+    @pytest.fixture
+    def thirdparty_request(self):
+        """Create a filter request for a third-party cookie."""
+        request = QWebEngineCookieStore.FilterRequest()
+        request.firstPartyUrl = QUrl('https://example.com')
+        request.origin = QUrl('https://hcaptcha.com')
+        request.thirdParty = True
+        return request
+
+    def test_thirdparty_blocked_without_whitelist(self, config_stub,
+                                                   thirdparty_request):
+        """Third-party cookies are blocked when whitelist is empty."""
+        config_stub.val.content.cookies.accept = 'no-3rdparty'
+        config_stub.val.content.cookies.thirdparty_whitelist = []
+        assert cookies._accept_cookie(thirdparty_request) is False
+
+    def test_thirdparty_allowed_with_whitelist(self, config_stub,
+                                                thirdparty_request):
+        """Third-party cookies are allowed when origin matches whitelist."""
+        config_stub.val.content.cookies.accept = 'no-3rdparty'
+        config_stub.val.content.cookies.thirdparty_whitelist = [
+            '*://hcaptcha.com/*'
+        ]
+        assert cookies._accept_cookie(thirdparty_request) is True
+
+    def test_thirdparty_allowed_with_subdomain_pattern(self, config_stub,
+                                                        thirdparty_request):
+        """Third-party cookies are allowed with subdomain wildcard patterns."""
+        thirdparty_request.origin = QUrl('https://accounts.hcaptcha.com')
+        config_stub.val.content.cookies.accept = 'no-3rdparty'
+        config_stub.val.content.cookies.thirdparty_whitelist = [
+            '*://*.hcaptcha.com/*'
+        ]
+        assert cookies._accept_cookie(thirdparty_request) is True
+
+    def test_thirdparty_blocked_when_not_matching(self, config_stub,
+                                                   thirdparty_request):
+        """Third-party cookies are blocked when origin doesn't match whitelist."""
+        thirdparty_request.origin = QUrl('https://tracker.example.net')
+        config_stub.val.content.cookies.accept = 'no-3rdparty'
+        config_stub.val.content.cookies.thirdparty_whitelist = [
+            '*://*.hcaptcha.com/*'
+        ]
+        assert cookies._accept_cookie(thirdparty_request) is False
+
+    def test_firstparty_unaffected_by_whitelist(self, config_stub,
+                                                 thirdparty_request):
+        """First-party cookies work regardless of whitelist."""
+        thirdparty_request.thirdParty = False
+        config_stub.val.content.cookies.accept = 'no-3rdparty'
+        config_stub.val.content.cookies.thirdparty_whitelist = []
+        assert cookies._accept_cookie(thirdparty_request) is True
+
+    def test_whitelist_ignored_when_accept_all(self, config_stub,
+                                                thirdparty_request):
+        """Whitelist is not consulted when accept is 'all'."""
+        config_stub.val.content.cookies.accept = 'all'
+        config_stub.val.content.cookies.thirdparty_whitelist = []
+        assert cookies._accept_cookie(thirdparty_request) is True
+
+    def test_whitelist_ignored_when_accept_never(self, config_stub,
+                                                  thirdparty_request):
+        """Whitelist cannot override 'never' setting."""
+        config_stub.val.content.cookies.accept = 'never'
+        config_stub.val.content.cookies.thirdparty_whitelist = [
+            '*://hcaptcha.com/*'
+        ]
+        assert cookies._accept_cookie(thirdparty_request) is False
+
+    def test_invalid_origin_url(self, config_stub, thirdparty_request):
+        """Invalid origin URL doesn't crash, cookie is blocked."""
+        thirdparty_request.origin = QUrl()  # Invalid URL
+        config_stub.val.content.cookies.accept = 'no-3rdparty'
+        config_stub.val.content.cookies.thirdparty_whitelist = [
+            '*://hcaptcha.com/*'
+        ]
+        assert cookies._accept_cookie(thirdparty_request) is False
+
+    def test_whitelist_with_no_unknown_3rdparty(self, config_stub,
+                                                 thirdparty_request):
+        """Whitelist also works with no-unknown-3rdparty setting."""
+        config_stub.val.content.cookies.accept = 'no-unknown-3rdparty'
+        config_stub.val.content.cookies.thirdparty_whitelist = [
+            '*://hcaptcha.com/*'
+        ]
+        assert cookies._accept_cookie(thirdparty_request) is True
+
+
 class TestInstall:
 
     def test_real_profile(self):
