@@ -19,10 +19,10 @@ When you press `f` (or another hint-triggering key), qutebrowser:
 
 | File | Purpose |
 |------|---------|
-| `qutebrowser/browser/hints.py` | Python hint manager, coordinates hinting |
+| `qutebrowser/browser/hints.py` | Python hint manager, coordinates hinting, creates HintLabel widgets |
 | `qutebrowser/browser/webelem.py` | Python web element abstraction |
-| `qutebrowser/javascript/webelem.js` | JavaScript element finding and serialization |
-| `qutebrowser/config/configdata.yml` | Default CSS selectors for hint groups |
+| `qutebrowser/javascript/webelem.js` | JavaScript element finding, visibility checking, and serialization |
+| `qutebrowser/config/configdata.yml` | Default CSS selectors for hint groups (lines 1810-1890) |
 
 ### Flow Diagram
 
@@ -41,6 +41,7 @@ tab.elements.find_css(selector, only_visible=True)
 JavaScript: webelem.find_css()
        │
        ├─► Query document, iframes, shadow DOMs
+       ├─► If :qb-hover in selector, also run CSS hover detection
        ├─► Filter by visibility (is_visible)
        └─► Serialize elements back to Python
        │
@@ -48,59 +49,66 @@ JavaScript: webelem.find_css()
 HintManager._start_cb(elements)
        │
        ├─► Generate hint strings (letter/number/word)
-       ├─► Create HintLabel widgets for each element
+       ├─► Create HintLabel widgets (batched, deferred show)
        └─► Enter hint mode
        │
        ▼
 User types hint → HintManager._fire() → Target action
 ```
 
-## JavaScript Element Finding
+## JavaScript Element Finding (`webelem.js`)
 
-The core element finding logic is in `webelem.js`. The `find_css` function:
+### Core Function: `find_css(selector, only_visible)`
+
+The core element finding logic searches multiple containers:
+1. Main document
+2. Same-domain iframes
+3. Open shadow roots
 
 ```javascript
 funcs.find_css = (selector, only_visible) => {
-    // Search in multiple containers:
-    // 1. Main document
-    // 2. Same-domain iframes
-    // 3. Open shadow roots
+    // Check for special :qb-hover marker
+    const includeCssHover = selector.includes(":qb-hover");
 
-    // Use Set to avoid duplicate elements
-    const elemSet = new Set();
-
-    // Query each container with the CSS selector
+    // Find elements via CSS selectors
     for (const [container, frame] of containers) {
         for (const elem of container.querySelectorAll(selector)) {
-            if (!elemSet.has(elem)) {
-                elems.push([elem, frame]);
-                elemSet.add(elem);
-            }
+            elems.push([elem, frame]);
         }
+    }
+
+    // If :qb-hover, also find elements with CSS :hover rules
+    if (includeCssHover) {
+        const hoverElems = find_elements_with_css_hover(containers);
+        // merge into elems...
     }
 
     // Filter by visibility and serialize
     for (const [elem, frame] of elems) {
         if (!only_visible || is_visible(elem, frame)) {
-            out.push(serialize_elem(elem, frame));
+            out.push(serialize_elem(elem, frame, includeCssHover));
         }
     }
 };
 ```
 
-### Visibility Checking
+### Visibility Checking (`is_visible`, `is_hidden_css`)
 
-An element is considered visible if:
+An element is considered **visible** if:
 1. CSS `visibility` is "visible"
 2. CSS `display` is not "none"
-3. CSS `opacity` is not "0" (except for certain framework classes)
-4. The element's bounding rect is within the viewport
-5. The element has at least one client rect
+3. CSS `opacity` is not "0" (except for ACE editor and Bootstrap framework classes)
+4. **No ancestor has `opacity: 0`** (catches Discord-style hover widgets)
+5. The element's bounding rect is within the viewport
+6. **Element is at least 4x4 pixels** (catches 1px-wide hidden elements)
+7. The element has at least one client rect
 
-### Element Serialization
+### Element Serialization (`serialize_elem`)
 
-Each found element is serialized into a Python-usable object containing:
-- `id`: Index in the elements array (for later manipulation)
+Supports two modes:
+
+**Full serialization** (default, used by `all` selector):
+- `id`: Index in the elements array
 - `rects`: Bounding rectangles (adjusted for iframe offsets)
 - `tag_name`: Element tag (e.g., "A", "BUTTON")
 - `class_name`: CSS classes
@@ -111,6 +119,34 @@ Each found element is serialized into a Python-usable object containing:
 - `caret_position`: Cursor position in text inputs
 - `is_content_editable`: Whether element is editable
 
+**Lightweight serialization** (used by `hoverables` selector):
+- `id`, `rects`, `tag_name` only
+- Other fields set to empty defaults
+- Significantly faster for large element counts
+
+## CSS Hover Detection (`find_elements_with_css_hover`)
+
+The `:qb-hover` marker in a selector triggers CSS hover detection, which:
+
+### Phase 1: Scan Stylesheets
+- Iterates through all same-origin stylesheets
+- Finds CSS rules containing `:hover`
+- Extracts base selectors (e.g., `.message:hover` → `.message`)
+- **Skips trivial properties**: `cursor`, `outline`, `text-decoration` (these don't indicate meaningful hover interactions)
+
+### Phase 2: Query DOM
+- Queries DOM once per unique selector (optimized from per-rule)
+- Uses Set for O(1) duplicate checking
+
+### Phase 3: Smart Filtering (large pages only)
+For pages with >200 hover candidates (e.g., Discord):
+- **Filters to elements with hidden clickable children**
+- Clickable = `a`, `button`, `[onclick]`, `[role="button"]`, `[tabindex]`, etc.
+- Hidden = `visibility: hidden`, `display: none`, or `opacity: 0`
+- This dramatically reduces hints on complex pages while keeping actionable hovers
+
+For pages with ≤200 candidates: returns all candidates without filtering.
+
 ## CSS Selectors
 
 The `hints.selectors` config option defines which elements to hint for each group.
@@ -119,16 +155,37 @@ The `hints.selectors` config option defines which elements to hint for each grou
 
 | Group | Purpose | Key Selectors |
 |-------|---------|---------------|
-| `all` | All clickable elements | `a`, `button`, `[onclick]`, `[role="button"]`, etc. |
+| `all` | All clickable elements | `a`, `button`, `[onclick]`, `[role="button"]`, `[tabindex]`, etc. |
 | `links` | Hyperlinks only | `a[href]`, `area[href]`, `link[href]` |
 | `images` | Images | `img` |
 | `media` | Media elements | `audio`, `video`, `img` |
 | `url` | Elements with URLs | `[src]`, `[href]` |
 | `inputs` | Form inputs | `input[type="text"]`, `textarea`, etc. |
+| `hoverables` | Elements with hover behavior | Attribute selectors + `:qb-hover` magic marker |
+
+### The `hoverables` Selector Group
+
+The `hoverables` group combines:
+
+**Attribute-based selectors:**
+- `[title]`, `[data-tooltip]`, `[data-tip]` - tooltip elements
+- `[aria-describedby]` - ARIA descriptions
+- `[onmouseover]`, `[onmouseenter]`, `[onmousemove]` - mouse event handlers
+- `[role="article"]`, `[aria-roledescription]` - content items (Discord messages, etc.)
+- `abbr`, `acronym` - abbreviations
+
+**Magic marker:**
+- `:qb-hover` - triggers CSS hover detection (see above)
+
+### The `:qb-hover` Magic Marker
+
+When `:qb-hover` appears in a selector:
+1. It's stripped from the selector before CSS querying
+2. CSS hover detection is triggered (`find_elements_with_css_hover`)
+3. Lightweight serialization is used (faster)
+4. Results from both attribute selectors and CSS hover detection are merged
 
 ### Customizing Selectors
-
-You can add custom groups or modify existing ones in your config:
 
 ```python
 c.hints.selectors['custom'] = ['div.my-class', '[data-clickable]']
@@ -163,6 +220,59 @@ The `target` parameter determines what happens when a hint is selected:
 | `javascript` | Execute JavaScript on element |
 | `spawn` | Spawn external command |
 | `delete` | Delete element from DOM |
+
+## Python-Side Optimizations (`hints.py`)
+
+### Batched HintLabel Creation
+
+HintLabels are created with deferred operations for performance:
+
+```python
+# Create labels with deferred show, positioning, sizing
+for elem, string in zip(elems, strings):
+    label = HintLabel(elem, self._context, show=False,
+                      connect_signals=False, position=False)
+    label.update_text('', string, adjust_size=False)
+
+# Batch: adjustSize, position, and show all labels
+for label in self._context.all_labels:
+    label.adjustSize()
+    label._move_to_elem()
+    label.show()
+```
+
+This reduces Qt paint cycles from N to ~1.
+
+### HintLabel Parameters
+
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `show` | `True` | Whether to call `show()` in constructor |
+| `connect_signals` | `True` | Whether to connect `contents_size_changed` signal |
+| `position` | `True` | Whether to call `_move_to_elem()` in constructor |
+| `adjust_size` | `True` | Whether to call `adjustSize()` in `update_text()` |
+
+## Performance Considerations
+
+### JavaScript Side
+
+| Technique | Applied To | Benefit |
+|-----------|------------|---------|
+| Lightweight serialization | `hoverables` | Skips expensive `outerHTML`, `textContent`, attributes |
+| Selector deduplication | CSS hover detection | Query DOM once per unique selector |
+| Trivial property filtering | CSS hover detection | Skip cursor/outline-only hover rules |
+| Smart filtering (>200 elements) | CSS hover detection | Dramatically reduces hints on complex pages |
+| Min size check (4px) | All selectors | Filters 1px-wide hidden elements |
+| Ancestor opacity check | All selectors | Catches parent containers with `opacity: 0` |
+
+### Python Side
+
+| Technique | Applied To | Benefit |
+|-----------|------------|---------|
+| Batched `show()` | All selectors | Reduces paint cycles |
+| Batched `adjustSize()` | All selectors | Reduces layout recalculations |
+| Batched `_move_to_elem()` | All selectors | Batches positioning |
+| Skip signal connections | All selectors | Reduces overhead during creation |
 
 ## Hint Modes
 
@@ -201,12 +311,6 @@ The hinting system searches for elements in:
 3. **Open shadow roots**: Shadow DOM with `mode: "open"`
 
 Cross-origin iframes and closed shadow roots cannot be searched due to browser security restrictions.
-
-## Performance Considerations
-
-The hinting system uses a `Set` to track elements and avoid duplicates when searching across multiple containers (document, iframes, shadow roots). This provides O(1) duplicate checking.
-
-Visibility checking involves DOM queries (`getComputedStyle`, `getBoundingClientRect`) which are relatively fast but can add up on pages with thousands of elements.
 
 ## See Also
 

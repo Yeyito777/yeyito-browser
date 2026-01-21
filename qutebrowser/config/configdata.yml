@@ -1884,6 +1884,32 @@ hints.selectors:
       - 'abbr'
       - 'acronym'
       - ':qb-hover'
+    rightclickables:
+      # Links - copy URL, open in new tab, etc.
+      - 'a'
+      - 'area'
+      - 'link'
+      # Media - save, copy, view source
+      - 'img'
+      - 'audio'
+      - 'video'
+      # Embedded content
+      - 'frame'
+      - 'iframe'
+      # Text inputs - paste, spell check, undo
+      - 'textarea'
+      - 'input:not([type="hidden"])'
+      - '[contenteditable]:not([contenteditable="false"])'
+      # Right-click event handlers
+      - '[oncontextmenu]'
+      - '[onauxclick]'
+      - '[onmousedown]'
+      - '[onmouseup]'
+      - '[onpointerdown]'
+      - '[onpointerup]'
+      # Framework context menu patterns
+      - '[data-context-menu]'
+      - '[data-contextmenu]'
   type:
     name: Dict
     keytype: String
