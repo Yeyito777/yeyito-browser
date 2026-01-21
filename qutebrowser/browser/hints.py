@@ -14,6 +14,7 @@ import dataclasses
 import json
 import textwrap
 import uuid
+import time
 from pathlib import Path, PurePosixPath
 from string import ascii_lowercase
 from typing import (TYPE_CHECKING, Optional)
@@ -96,7 +97,7 @@ class HintLabel(QLabel):
     """
 
     def __init__(self, elem: webelem.AbstractWebElement,
-                 context: 'HintContext') -> None:
+                 context: 'HintContext', show: bool = True) -> None:
         super().__init__(parent=context.tab)
         self._context = context
         self.elem = elem
@@ -111,7 +112,8 @@ class HintLabel(QLabel):
 
         self._context.tab.contents_size_changed.connect(self._move_to_elem)
         self._move_to_elem()
-        self.show()
+        if show:
+            self.show()
 
     def __repr__(self) -> str:
         try:
@@ -776,6 +778,8 @@ class HintManager(QObject):
 
     def _start_cb(self, elems: _ElemsType) -> None:
         """Initialize the elements and labels based on the context set."""
+        _total_start = time.perf_counter()
+
         if self._context is None:
             log.hints.debug("In _start_cb without context!")
             return
@@ -796,23 +800,44 @@ class HintManager(QObject):
                 .format(self._context.tab.tab_id, tab.tab_id))
             return
 
+        _t0 = time.perf_counter()
         strings = self._hint_strings(elems)
+        _t1 = time.perf_counter()
         log.hints.debug("hints: {}".format(', '.join(strings)))
 
+        _t2 = time.perf_counter()
         for elem, string in zip(elems, strings):
-            label = HintLabel(elem, self._context)
+            label = HintLabel(elem, self._context, show=False)
             label.update_text('', string)
             self._context.all_labels.append(label)
             self._context.labels[string] = label
+        _t3 = time.perf_counter()
+
+        # Batch show all labels at once (reduces paint cycles)
+        _t_show_start = time.perf_counter()
+        for label in self._context.all_labels:
+            label.show()
+        _t_show_end = time.perf_counter()
 
         keyparser = self._get_keyparser(usertypes.KeyMode.hint)
         assert isinstance(keyparser, modeparsers.HintKeyParser), keyparser
+        _t_bindings_start = time.perf_counter()
         keyparser.update_bindings(strings)
+        _t_bindings_end = time.perf_counter()
 
         modeman.enter(self._win_id, usertypes.KeyMode.hint,
                       'HintManager.start')
+        _t5 = time.perf_counter()
 
         self.set_text.emit(self._get_text())
+
+        # Timing output
+        log.hints.debug(f"[TIMING] _hint_strings: {(_t1-_t0)*1000:.2f}ms")
+        log.hints.debug(f"[TIMING] create HintLabels ({len(elems)} labels): {(_t3-_t2)*1000:.2f}ms")
+        log.hints.debug(f"[TIMING] batch show(): {(_t_show_end-_t_show_start)*1000:.2f}ms")
+        log.hints.debug(f"[TIMING] update_bindings: {(_t_bindings_end-_t_bindings_start)*1000:.2f}ms")
+        log.hints.debug(f"[TIMING] modeman.enter: {(_t5-_t_bindings_end)*1000:.2f}ms")
+        log.hints.debug(f"[TIMING] _start_cb total: {(time.perf_counter()-_total_start)*1000:.2f}ms")
 
         if self._context.first:
             self._fire(strings[0])

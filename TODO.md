@@ -11,6 +11,7 @@
 - Prompted again on javascript yes/Always/no/Never promps if selecting Always or Never?
 - Hinting must highlight elements if ANY part of their bounding box intersects with their screen, not just the top-left corner as I suspect it currently does.
 - Devtools must be col_bg and have the accents
+- Fix the fact that when I rebuild qutebrowser oftentimes credentials are lost and I need to relog into discord for example.
 
 # Improvements
 - Add fine-grained selectors. f should highlight all elements with click events, right click all with right click events, and hover all with hover events. + extras for all those

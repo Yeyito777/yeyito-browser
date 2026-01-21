@@ -52,7 +52,9 @@ window._qutebrowser.webelem = (function() {
         };
     }
 
-    function serialize_elem(elem, frame = null) {
+    // Lightweight mode skips expensive serialization (outerHTML, textContent, attributes iteration)
+    // Used for hint operations where we only need id + rects for positioning
+    function serialize_elem(elem, frame = null, lightweight = false) {
         if (!elem) {
             return null;
         }
@@ -60,22 +62,19 @@ window._qutebrowser.webelem = (function() {
         const id = elements.length;
         elements[id] = elem;
 
-        const caret_position = elem.selectionStart;
-
-        // isContentEditable occasionally returns undefined.
-        const is_content_editable = elem.isContentEditable || false;
-
         const out = {
             "id": id,
             "rects": [],  // Gets filled up later
-            "caret_position": caret_position,
-            "is_content_editable": is_content_editable,
+            // Always include these with defaults (Python expects them)
+            "caret_position": null,
+            "is_content_editable": false,
+            "class_name": "",
+            "value": "",
+            "outer_xml": "",
+            "attributes": {},
         };
 
-        // Deal with various fun things which can happen in form elements
-        // https://github.com/qutebrowser/qutebrowser/issues/2569
-        // https://github.com/qutebrowser/qutebrowser/issues/2877
-        // https://stackoverflow.com/q/22942689/2085149
+        // Always include tag_name (cheap and useful)
         if (typeof elem.tagName === "string") {
             out.tag_name = elem.tagName;
         } else if (typeof elem.nodeName === "string") {
@@ -84,37 +83,36 @@ window._qutebrowser.webelem = (function() {
             out.tag_name = "";
         }
 
-        if (typeof elem.className === "string") {
-            out.class_name = elem.className;
-        } else {
-            // e.g. SVG elements
-            out.class_name = "";
-        }
+        // Skip expensive operations in lightweight mode
+        if (!lightweight) {
+            out.caret_position = elem.selectionStart;
+            out.is_content_editable = elem.isContentEditable || false;
 
-        if (typeof elem.value === "string" || typeof elem.value === "number") {
-            out.value = elem.value;
-        } else {
-            out.value = "";
-        }
+            if (typeof elem.className === "string") {
+                out.class_name = elem.className;
+            }
 
-        if (typeof elem.outerHTML === "string") {
-            out.outer_xml = elem.outerHTML;
-        } else {
-            out.outer_xml = "";
-        }
+            if (typeof elem.value === "string" || typeof elem.value === "number") {
+                out.value = elem.value;
+            }
 
-        if (typeof elem.textContent === "string") {
-            out.text = elem.textContent;
-        } else if (typeof elem.text === "string") {
-            out.text = elem.text;
-        }  // else: don't add the text at all
+            if (typeof elem.outerHTML === "string") {
+                out.outer_xml = elem.outerHTML;
+            }
 
-        const attributes = {};
-        for (let i = 0; i < elem.attributes.length; ++i) {
-            const attr = elem.attributes[i];
-            attributes[attr.name] = attr.value;
+            if (typeof elem.textContent === "string") {
+                out.text = elem.textContent;
+            } else if (typeof elem.text === "string") {
+                out.text = elem.text;
+            }
+
+            const attributes = {};
+            for (let i = 0; i < elem.attributes.length; ++i) {
+                const attr = elem.attributes[i];
+                attributes[attr.name] = attr.value;
+            }
+            out.attributes = attributes;
         }
-        out.attributes = attributes;
 
         const client_rects = elem.getClientRects();
         const frame_offset_rect = get_frame_offset(frame);
@@ -125,8 +123,6 @@ window._qutebrowser.webelem = (function() {
                 add_offset_rect(rect, frame_offset_rect)
             );
         }
-
-        // console.log(JSON.stringify(out));
 
         return out;
     }
@@ -363,10 +359,11 @@ window._qutebrowser.webelem = (function() {
         }
 
         // Filter by visibility and serialize
+        // Use lightweight serialization for hover detection (skips outerHTML, textContent, attributes)
         const out = [];
         for (const [elem, frame] of elems) {
             if (!only_visible || is_visible(elem, frame)) {
-                out.push(serialize_elem(elem, frame));
+                out.push(serialize_elem(elem, frame, includeCssHover));
             }
         }
 
