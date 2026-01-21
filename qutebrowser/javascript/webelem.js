@@ -272,7 +272,7 @@ window._qutebrowser.webelem = (function() {
 
         // Phase 2: Query DOM once per unique selector
         const elemSet = new Set();
-        const result = [];
+        const candidates = [];
 
         for (const selector of uniqueSelectors) {
             for (const [container, frame] of containers) {
@@ -280,12 +280,55 @@ window._qutebrowser.webelem = (function() {
                     for (const elem of container.querySelectorAll(selector)) {
                         if (!elemSet.has(elem)) {
                             elemSet.add(elem);
-                            result.push([elem, frame]);
+                            candidates.push([elem, frame]);
                         }
                     }
                 } catch (e) {
                     // Invalid selector, skip
                 }
+            }
+        }
+
+        // Phase 3: Filter to elements that have hidden clickable children
+        // Only apply this aggressive filter on pages with many candidates (e.g., Discord)
+        // For simpler pages (e.g., Claude.ai), keep all candidates
+        const CANDIDATE_THRESHOLD = 200;
+
+        if (candidates.length <= CANDIDATE_THRESHOLD) {
+            // Simple page: return all candidates without filtering
+            return candidates;
+        }
+
+        // Complex page: filter to elements with hidden clickable children
+        // (these are likely "actionable" hovers that reveal buttons/actions)
+        const clickableSelector = [
+            "a", "button",
+            "[onclick]", "[onmousedown]",
+            "[role='button']", "[role='link']", "[role='menuitem']",
+            "[role='menuitemcheckbox']", "[role='menuitemradio']",
+            "[tabindex]:not([tabindex='-1'])",
+        ].join(", ");
+
+        function hasHiddenClickableChild(elem) {
+            const clickables = elem.querySelectorAll(clickableSelector);
+            for (const child of clickables) {
+                const style = window.getComputedStyle(child);
+                const isHidden = (
+                    style.visibility === "hidden" ||
+                    style.display === "none" ||
+                    style.opacity === "0"
+                );
+                if (isHidden) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        const result = [];
+        for (const [elem, frame] of candidates) {
+            if (hasHiddenClickableChild(elem)) {
+                result.push([elem, frame]);
             }
         }
 
