@@ -1883,6 +1883,10 @@ hints.selectors:
       - '[aria-roledescription]'
       - 'abbr'
       - 'acronym'
+      # Always hoverable regardless of page complexity
+      - 'iframe'
+      - 'frame'
+      - 'video'
       - ':qb-hover'
     rightclickables:
       # Links - copy URL, open in new tab, etc.
