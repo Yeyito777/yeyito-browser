@@ -192,6 +192,31 @@ window._qutebrowser.webelem = (function() {
     function find_elements_with_css_hover(containers) {
         const uniqueSelectors = new Set();  // Collect unique base selectors first
 
+        // Trivial CSS properties that don't indicate meaningful hover interactions
+        const trivialProperties = new Set([
+            "cursor",
+            "outline", "outline-color", "outline-style", "outline-width", "outline-offset",
+            "text-decoration", "text-decoration-color", "text-decoration-line",
+            "text-decoration-style", "text-decoration-thickness",
+            "-webkit-text-decoration", "-moz-text-decoration",
+        ]);
+
+        // Check if a CSS rule only modifies trivial properties
+        function hasOnlyTrivialProperties(rule) {
+            const style = rule.style;
+            if (!style || style.length === 0) {
+                return true;  // Empty rule is trivial
+            }
+
+            for (let i = 0; i < style.length; i++) {
+                const prop = style[i];
+                if (!trivialProperties.has(prop)) {
+                    return false;  // Found a non-trivial property
+                }
+            }
+            return true;  // All properties are trivial
+        }
+
         // Helper to extract base selectors from a :hover selector
         // e.g., ".message:hover" -> ".message"
         // e.g., ".card:hover .icon" -> ".card"
@@ -212,7 +237,10 @@ window._qutebrowser.webelem = (function() {
         function processRule(rule) {
             if (rule.type === CSSRule.STYLE_RULE && rule.selectorText) {
                 if (rule.selectorText.includes(":hover")) {
-                    extractBaseSelectors(rule.selectorText);
+                    // Skip rules that only change trivial properties
+                    if (!hasOnlyTrivialProperties(rule)) {
+                        extractBaseSelectors(rule.selectorText);
+                    }
                 }
             }
             // Handle nested rules (media queries, supports, etc.)
