@@ -97,7 +97,8 @@ class HintLabel(QLabel):
     """
 
     def __init__(self, elem: webelem.AbstractWebElement,
-                 context: 'HintContext', show: bool = True) -> None:
+                 context: 'HintContext', show: bool = True,
+                 connect_signals: bool = True, position: bool = True) -> None:
         super().__init__(parent=context.tab)
         self._context = context
         self.elem = elem
@@ -110,8 +111,10 @@ class HintLabel(QLabel):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setIndent(0)
 
-        self._context.tab.contents_size_changed.connect(self._move_to_elem)
-        self._move_to_elem()
+        if connect_signals:
+            self._context.tab.contents_size_changed.connect(self._move_to_elem)
+        if position:
+            self._move_to_elem()
         if show:
             self.show()
 
@@ -122,12 +125,14 @@ class HintLabel(QLabel):
             text = '<deleted>'
         return utils.get_repr(self, elem=self.elem, text=text)
 
-    def update_text(self, matched: str, unmatched: str) -> None:
+    def update_text(self, matched: str, unmatched: str,
+                    adjust_size: bool = True) -> None:
         """Set the text for the hint.
 
         Args:
             matched: The part of the text which was typed.
             unmatched: The part of the text which was not typed yet.
+            adjust_size: Whether to call adjustSize() (can be deferred for batch).
         """
         if (config.cache['hints.uppercase'] and
                 self._context.hint_mode in ['letter', 'word']):
@@ -143,7 +148,8 @@ class HintLabel(QLabel):
                 match_color, matched, unmatched))
         else:
             self.setText(unmatched)
-        self.adjustSize()
+        if adjust_size:
+            self.adjustSize()
 
     @pyqtSlot()
     def _move_to_elem(self) -> None:
@@ -806,18 +812,22 @@ class HintManager(QObject):
         log.hints.debug("hints: {}".format(', '.join(strings)))
 
         _t2 = time.perf_counter()
+        # Create labels with deferred show, positioning, sizing, and no signal connections
         for elem, string in zip(elems, strings):
-            label = HintLabel(elem, self._context, show=False)
-            label.update_text('', string)
+            label = HintLabel(elem, self._context, show=False,
+                              connect_signals=False, position=False)
+            label.update_text('', string, adjust_size=False)
             self._context.all_labels.append(label)
             self._context.labels[string] = label
         _t3 = time.perf_counter()
 
-        # Batch show all labels at once (reduces paint cycles)
-        _t_show_start = time.perf_counter()
+        # Batch: adjustSize, position, and show all labels
+        _t_batch_start = time.perf_counter()
         for label in self._context.all_labels:
+            label.adjustSize()
+            label._move_to_elem()
             label.show()
-        _t_show_end = time.perf_counter()
+        _t_batch_end = time.perf_counter()
 
         keyparser = self._get_keyparser(usertypes.KeyMode.hint)
         assert isinstance(keyparser, modeparsers.HintKeyParser), keyparser
@@ -834,7 +844,7 @@ class HintManager(QObject):
         # Timing output
         log.hints.debug(f"[TIMING] _hint_strings: {(_t1-_t0)*1000:.2f}ms")
         log.hints.debug(f"[TIMING] create HintLabels ({len(elems)} labels): {(_t3-_t2)*1000:.2f}ms")
-        log.hints.debug(f"[TIMING] batch show(): {(_t_show_end-_t_show_start)*1000:.2f}ms")
+        log.hints.debug(f"[TIMING] batch (adjustSize+position+show): {(_t_batch_end-_t_batch_start)*1000:.2f}ms")
         log.hints.debug(f"[TIMING] update_bindings: {(_t_bindings_end-_t_bindings_start)*1000:.2f}ms")
         log.hints.debug(f"[TIMING] modeman.enter: {(_t5-_t_bindings_end)*1000:.2f}ms")
         log.hints.debug(f"[TIMING] _start_cb total: {(time.perf_counter()-_total_start)*1000:.2f}ms")
