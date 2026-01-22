@@ -44,6 +44,8 @@ config.set("content.user_stylesheets", ["~/.config/qutebrowser/cssoverrides/null
 config.set("content.user_stylesheets", ["~/.config/qutebrowser/cssoverrides/null.css"], "127.0.0.1:*/*")
 ```
 
+- Added :recover-list :recover-load :recover-last and :recover-current commands, they let you recover lost (or previous) sessions until the next boot by saving them in /tmp
+
 - I've added other things but honestly I forget.
 
 ## Final note
