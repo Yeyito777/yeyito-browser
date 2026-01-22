@@ -380,15 +380,12 @@ window._qutebrowser.webelem = (function() {
 
         for (const [container, frame] of containers) {
             // Always include the main scrolling element for each container
+            // so users can select it and scroll through it (even if not currently scrollable)
             const doc = container.ownerDocument || container;
             if (doc.scrollingElement && !elemSet.has(doc.scrollingElement)) {
-                // Check if the document itself is scrollable
                 const scrollEl = doc.scrollingElement;
-                if (scrollEl.scrollHeight > scrollEl.clientHeight ||
-                    scrollEl.scrollWidth > scrollEl.clientWidth) {
-                    elemSet.add(scrollEl);
-                    result.push([scrollEl, frame]);
-                }
+                elemSet.add(scrollEl);
+                result.push([scrollEl, frame]);
             }
 
             // Find all scrollable elements in this container
