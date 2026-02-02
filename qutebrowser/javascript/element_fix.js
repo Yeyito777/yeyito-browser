@@ -11,10 +11,101 @@
     }
     window._qutebrowser_fix_initialized = true;
 
+    // ============ DIAGNOSTIC LOGGING ============
+    const DEBUG = true;
+    const LOG_PREFIX = "[qb-element-fix]";
+
+    // Stats tracking
+    const stats = {
+        elementsProcessed: 0,
+        elementsFixed: 0,
+        mutationBatches: 0,
+        mutationsTotal: 0,
+        errors: 0,
+        mutationsPerSecond: 0,
+        isProcessing: false,
+        processingDepth: 0
+    };
+
+    // Track mutations per second to detect runaway loops
+    let mutationCountWindow = [];
+    const MUTATION_WINDOW_MS = 1000;
+    const MUTATION_THRESHOLD = 500; // Warn if more than this many mutations/sec
+
+    function log(...args) {
+        if (DEBUG) {
+            console.log(LOG_PREFIX, ...args);
+        }
+    }
+
+    function warn(...args) {
+        console.warn(LOG_PREFIX, ...args);
+    }
+
+    function error(...args) {
+        console.error(LOG_PREFIX, ...args);
+    }
+
+    function trackMutation(count) {
+        const now = Date.now();
+        mutationCountWindow.push({ time: now, count: count });
+
+        // Remove old entries
+        mutationCountWindow = mutationCountWindow.filter(
+            entry => now - entry.time < MUTATION_WINDOW_MS
+        );
+
+        // Calculate mutations per second
+        const total = mutationCountWindow.reduce((sum, e) => sum + e.count, 0);
+        stats.mutationsPerSecond = total;
+
+        if (total > MUTATION_THRESHOLD) {
+            warn("HIGH MUTATION RATE:", total, "mutations/sec - possible feedback loop!");
+        }
+    }
+
+    function logStats() {
+        log("Stats:", JSON.stringify(stats, null, 2));
+    }
+
+    // Expose stats globally for console inspection
+    window._qb_fix_stats = stats;
+    window._qb_fix_log_stats = logStats;
+
+    // Kill switch - allows disabling the script at runtime
+    let disabled = false;
+    let shadowRootCount = 0;
+
+    window._qb_fix_disable = function() {
+        disabled = true;
+        warn("element_fix.js DISABLED - no more processing will occur");
+        warn("To re-enable, call window._qb_fix_enable()");
+    };
+
+    window._qb_fix_enable = function() {
+        disabled = false;
+        warn("element_fix.js ENABLED");
+    };
+
+    window._qb_fix_status = function() {
+        console.log("=== element_fix.js Status ===");
+        console.log("Disabled:", disabled);
+        console.log("Stats:", JSON.stringify(stats, null, 2));
+        console.log("Shadow roots observed:", shadowRootCount);
+        console.log("URL:", window.location.href);
+    };
+
+    log("Initializing element_fix.js on", window.location.href);
+    // ============ END DIAGNOSTIC LOGGING ============
+
     /**
      * Apply fix styles to an element based on its properties.
      */
     function fixElement(element) {
+        if (disabled) {
+            return;
+        }
+
         if (!(element instanceof Element)) {
             return;
         }
@@ -24,28 +115,37 @@
             return;
         }
 
+        stats.elementsProcessed++;
+
         try {
             const computedStyle = window.getComputedStyle(element);
 
+            let wasFixed = false;
+
             // If the element has a gradient, fix it to use our colors
-            fixGradient(element, computedStyle);
+            if (fixGradient(element, computedStyle)) {
+                wasFixed = true;
+            }
 
             // If the element has a non-transparent background
             // Then make its background this color: #00050f
             if (!isTransparent(computedStyle.backgroundColor)) {
                 element.style.setProperty("background-color", "#00050f", "important");
+                wasFixed = true;
             }
 
             // If the element has a border
             // Then make the border this color: #1d9bf0
             if (hasBorder(computedStyle)) {
                 element.style.setProperty("border-color", "#1d9bf0", "important");
+                wasFixed = true;
             }
 
             // If the element has text and is NOT a code block
             // Then make the text this color: #ffffff
             if (hasText(element) && !isCodeBlock(element)) {
                 element.style.setProperty("color", "#ffffff", "important");
+                wasFixed = true;
             }
 
             // If the element is an SVG or SVG child element
@@ -53,11 +153,17 @@
             if (isSvgElement(element)) {
                 element.style.setProperty("fill", "#ffffff", "important");
                 element.style.setProperty("stroke", "#ffffff", "important");
+                wasFixed = true;
+            }
+
+            if (wasFixed) {
+                stats.elementsFixed++;
             }
 
             element._qb_fixed = true;
         } catch (e) {
-            // Element might not be attached to DOM yet
+            stats.errors++;
+            error("Error fixing element:", e.message, "Element:", element.tagName, element.className);
         }
     }
 
@@ -199,7 +305,19 @@
 
         // Process regular children
         if (element.querySelectorAll) {
-            const children = element.querySelectorAll("*");
+            let children;
+            try {
+                children = element.querySelectorAll("*");
+            } catch (e) {
+                error("querySelectorAll failed:", e.message);
+                return;
+            }
+
+            // Warn about large element counts
+            if (children.length > 5000) {
+                warn("Processing large element tree:", children.length, "elements");
+            }
+
             for (let i = 0; i < children.length; i++) {
                 fixElement(children[i]);
                 // Check for shadow roots on each child
@@ -221,25 +339,60 @@
      * Handle mutations.
      */
     function handleMutations(mutations) {
-        for (const mutation of mutations) {
-            // Handle added nodes
-            for (let i = 0; i < mutation.addedNodes.length; i++) {
-                const node = mutation.addedNodes[i];
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    processElement(node);
-                }
-            }
-
-            // Handle attribute changes (style or class changes)
-            if (mutation.type === "attributes") {
-                const target = mutation.target;
-                if (target.nodeType === Node.ELEMENT_NODE) {
-                    // Reset the fixed flag so we can re-check
-                    target._qb_fixed = false;
-                    fixElement(target);
-                }
-            }
+        if (disabled) {
+            return;
         }
+
+        // Detect re-entrancy (mutations triggered by our own style changes)
+        if (stats.isProcessing) {
+            stats.processingDepth++;
+            if (stats.processingDepth > 10) {
+                error("CRITICAL: Processing depth exceeded 10 - likely infinite loop! Aborting.");
+                return;
+            }
+            warn("Re-entrant mutation detected, depth:", stats.processingDepth);
+        }
+
+        stats.isProcessing = true;
+        stats.mutationBatches++;
+        stats.mutationsTotal += mutations.length;
+        trackMutation(mutations.length);
+
+        const startTime = performance.now();
+        let addedCount = 0;
+
+        try {
+            for (const mutation of mutations) {
+                // Only handle added nodes - don't reprocess on attribute changes
+                // (reprocessing on class changes causes feedback loops with some sites)
+                for (let i = 0; i < mutation.addedNodes.length; i++) {
+                    const node = mutation.addedNodes[i];
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        addedCount++;
+                        processElement(node);
+                    }
+                }
+            }
+        } catch (e) {
+            error("Error in handleMutations:", e.message, e.stack);
+        }
+
+        const elapsed = performance.now() - startTime;
+
+        // Log if processing took too long (potential jank)
+        if (elapsed > 50) {
+            warn("Slow mutation batch:", elapsed.toFixed(2), "ms for", mutations.length,
+                 "mutations,", addedCount, "elements added");
+        }
+
+        // Log periodically
+        if (stats.mutationBatches % 100 === 0) {
+            log("Processed", stats.mutationBatches, "mutation batches,",
+                stats.elementsProcessed, "elements,", stats.errors, "errors");
+        }
+
+        stats.isProcessing = false;
+        stats.processingDepth = 0;
     }
 
     // Keep track of observed shadow roots to avoid duplicates
@@ -253,13 +406,15 @@
             return;
         }
         observedShadowRoots.add(shadowRoot);
+        shadowRootCount++;
+
+        log("Observing shadow root #" + shadowRootCount + " on",
+            shadowRoot.host ? shadowRoot.host.tagName : "unknown");
 
         const observer = new MutationObserver(handleMutations);
         observer.observe(shadowRoot, {
             childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ["style", "class"]
+            subtree: true
         });
     }
 
@@ -268,7 +423,14 @@
      */
     const originalAttachShadow = Element.prototype.attachShadow;
     Element.prototype.attachShadow = function(init) {
-        const shadowRoot = originalAttachShadow.call(this, init);
+        let shadowRoot;
+        try {
+            shadowRoot = originalAttachShadow.call(this, init);
+        } catch (e) {
+            error("attachShadow failed:", e.message);
+            throw e;
+        }
+        log("attachShadow intercepted on", this.tagName);
         observeShadowRoot(shadowRoot);
         return shadowRoot;
     };
@@ -282,31 +444,39 @@
     function startObserving() {
         const target = document.documentElement || document.body;
         if (target) {
-            // Process all existing elements first
-            processElement(target);
+            log("Starting observation on", target.tagName);
 
-            // Watch for new elements and attribute changes
+            // Process all existing elements first
+            const initStart = performance.now();
+            processElement(target);
+            const initElapsed = performance.now() - initStart;
+            log("Initial processing took", initElapsed.toFixed(2), "ms,",
+                stats.elementsProcessed, "elements processed");
+
+            // Watch for new elements only (not attribute changes - causes feedback loops)
             mainObserver.observe(target, {
                 childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ["style", "class"]
+                subtree: true
             });
-
-            // Re-process periodically to catch dynamically styled elements
-            setInterval(function() {
-                processElement(document.documentElement || document.body);
-            }, 1000);
+            log("MutationObserver active (watching new elements only)");
         } else {
+            log("Waiting for document element...");
             requestAnimationFrame(startObserving);
         }
     }
 
     // Start as early as possible
     if (document.documentElement) {
+        log("Document element available, starting immediately");
         startObserving();
     } else {
+        log("Document element not available, waiting...");
         document.addEventListener("DOMContentLoaded", startObserving, { once: true });
         requestAnimationFrame(startObserving);
     }
+
+    // Log that initialization is complete
+    log("element_fix.js initialization complete");
+    log("Access window._qb_fix_stats for live stats");
+    log("Call window._qb_fix_log_stats() for formatted output");
 })();
