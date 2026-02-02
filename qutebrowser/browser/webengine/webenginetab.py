@@ -773,10 +773,6 @@ class WebEngineElements(browsertab.AbstractElements):
             error_cb: The callback to call in case of an error.
             js_elems: The elements serialized from javascript.
         """
-        # Check if widget is deleted FIRST to avoid accessing destroyed C++ objects
-        if sip.isdeleted(self._tab._widget):
-            return  # Silently abort - tab is gone
-
         if js_elems is None:
             url = self._tab.url().toDisplayString()
             is_deleted = sip.isdeleted(self._tab._widget)
@@ -814,10 +810,6 @@ class WebEngineElements(browsertab.AbstractElements):
                       Called with a WebEngineElement or None.
             js_elem: The element serialized from javascript.
         """
-        # Check if widget is deleted FIRST to avoid accessing destroyed C++ objects
-        if sip.isdeleted(self._tab._widget):
-            return  # Silently abort - tab is gone
-
         debug_str = ('None' if js_elem is None
                      else utils.elide(repr(js_elem), 1000))
         log.webview.debug("Got element from JS: {}".format(debug_str))
@@ -1156,15 +1148,6 @@ class _WebEngineScripts(QObject):
         # FIXME:qtwebengine what about subframes=True?
         self._inject_js('js', js_code, subframes=True)
         self._init_stylesheet()
-
-        # Inject element fix script (auto-activating, runs in MainWorld to access shadow DOM)
-        fix_code = resources.read_file('javascript/element_fix.js')
-        self._inject_js(
-            'element_fix',
-            fix_code,
-            subframes=True,
-            world=QWebEngineScript.ScriptWorldId.MainWorld
-        )
 
         self._greasemonkey.scripts_reloaded.connect(
             self._inject_all_greasemonkey_scripts)
