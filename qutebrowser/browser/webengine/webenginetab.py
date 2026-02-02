@@ -1149,6 +1149,15 @@ class _WebEngineScripts(QObject):
         self._inject_js('js', js_code, subframes=True)
         self._init_stylesheet()
 
+        # Inject element fix script (auto-activating, runs in MainWorld to access shadow DOM)
+        fix_code = resources.read_file('javascript/element_fix.js')
+        self._inject_js(
+            'element_fix',
+            fix_code,
+            subframes=True,
+            world=QWebEngineScript.ScriptWorldId.MainWorld
+        )
+
         self._greasemonkey.scripts_reloaded.connect(
             self._inject_all_greasemonkey_scripts)
         self._inject_all_greasemonkey_scripts()
