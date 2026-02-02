@@ -4,6 +4,53 @@
 
 "use strict";
 
+// ============ MUTATION OBSERVER INTERCEPTION ============
+// This MUST run before any site JavaScript to hide our DOM modifications.
+// We intercept MutationObserver and filter out mutations caused by our changes,
+// so site JavaScript never sees them and can't react to them.
+(function() {
+    if (window._qb_mutation_observer_intercepted) return;
+    window._qb_mutation_observer_intercepted = true;
+
+    const OriginalMutationObserver = window.MutationObserver;
+
+    window.MutationObserver = function(callback) {
+        const filteredCallback = function(mutations, observer) {
+            const filtered = mutations.filter(mutation => {
+                if (mutation.type === 'attributes') {
+                    const attr = mutation.attributeName;
+                    // Hide our data-qb-* attribute changes
+                    if (attr && attr.startsWith('data-qb-')) {
+                        return false;
+                    }
+                    // Hide style changes on elements we've marked as ours
+                    if (attr === 'style' && mutation.target.hasAttribute &&
+                        mutation.target.hasAttribute('data-qb-styled')) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            if (filtered.length > 0) {
+                callback(filtered, observer);
+            }
+        };
+
+        return new OriginalMutationObserver(filteredCallback);
+    };
+
+    // Preserve constructor properties
+    window.MutationObserver.prototype = OriginalMutationObserver.prototype;
+    window.MutationObserver.toString = function() {
+        return OriginalMutationObserver.toString();
+    };
+
+    // Store original for our own use
+    window._qb_OriginalMutationObserver = OriginalMutationObserver;
+})();
+// ============ END MUTATION OBSERVER INTERCEPTION ============
+
 (function() {
     // Prevent double initialization
     if (window._qutebrowser_fix_initialized) {
@@ -98,6 +145,20 @@
     log("Initializing element_fix.js on", window.location.href);
     // ============ END DIAGNOSTIC LOGGING ============
 
+    // Marker attribute for elements we're styling (used by MutationObserver filter)
+    const ATTR_STYLED = "data-qb-styled";
+
+    /**
+     * Mark an element as ours and set a style property.
+     * The MutationObserver interception will hide these changes from site JS.
+     */
+    function setStyledProperty(element, property, value) {
+        if (!element.hasAttribute(ATTR_STYLED)) {
+            element.setAttribute(ATTR_STYLED, "");
+        }
+        element.style.setProperty(property, value, "important");
+    }
+
     /**
      * Apply fix styles to an element based on its properties.
      */
@@ -130,29 +191,29 @@
             // If the element has a non-transparent background
             // Then make its background this color: #00050f
             if (!isTransparent(computedStyle.backgroundColor)) {
-                element.style.setProperty("background-color", "#00050f", "important");
+                setStyledProperty(element, "background-color", "#00050f");
                 wasFixed = true;
             }
 
             // If the element has a border
             // Then make the border this color: #1d9bf0
             if (hasBorder(computedStyle)) {
-                element.style.setProperty("border-color", "#1d9bf0", "important");
+                setStyledProperty(element, "border-color", "#1d9bf0");
                 wasFixed = true;
             }
 
             // If the element has text and is NOT a code block
-            // Then make the text this color: #ffffff
+            // Then make the text white
             if (hasText(element) && !isCodeBlock(element)) {
-                element.style.setProperty("color", "#ffffff", "important");
+                setStyledProperty(element, "color", "#ffffff");
                 wasFixed = true;
             }
 
             // If the element is an SVG or SVG child element
             // Then make it white
             if (isSvgElement(element)) {
-                element.style.setProperty("fill", "#ffffff", "important");
-                element.style.setProperty("stroke", "#ffffff", "important");
+                setStyledProperty(element, "fill", "#ffffff");
+                setStyledProperty(element, "stroke", "#ffffff");
                 wasFixed = true;
             }
 
@@ -181,10 +242,10 @@
         // Check if it contains a gradient
         if (backgroundImage.includes("gradient")) {
             // Replace the gradient with our standard gradient
-            element.style.setProperty(
+            setStyledProperty(
+                element,
                 "background-image",
-                "linear-gradient(to bottom, #00050f, #090d35)",
-                "important"
+                "linear-gradient(to bottom, #00050f, #090d35)"
             );
             return true;
         }

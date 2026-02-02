@@ -8,7 +8,33 @@ A JavaScript-based system that automatically modifies DOM elements as they are a
   - Code block detection includes: `<pre>`, `<code>`, elements with `.hljs`, `[class*="language-"]`, or `.textLayer` classes, and any descendants of these
 - If the element is an SVG or SVG child → `fill: #ffffff !important` and `stroke: #ffffff !important`
 
-The system uses MutationObserver to watch for new elements only (not attribute changes - reprocessing existing elements causes feedback loops with some sites), and handles Shadow DOM by intercepting `attachShadow`.
+## Implementation Approach
+
+The system uses **MutationObserver interception** to hide DOM modifications from site JavaScript. This avoids feedback loops where setting `element.style.setProperty()` triggers site JavaScript (React, etc.) which adds new elements, causing runaway CPU usage.
+
+**The Problem:**
+When we modify element styles, site JavaScript (via their MutationObservers) can detect these changes and react by adding/recreating DOM elements. This triggers our observer, we style the new elements, site reacts again → feedback loop → runaway CPU.
+
+**The Solution:**
+We intercept the `MutationObserver` constructor before any site JavaScript runs. Our wrapper filters out mutations caused by our changes, so site code never sees them.
+
+**How it works:**
+1. Script runs at document start, replaces `window.MutationObserver` with a filtering wrapper
+2. Site JavaScript creates observers using our wrapped version (unknowingly)
+3. When we modify elements, we first mark them with `data-qb-styled` attribute
+4. Our wrapper filters out:
+   - Any `data-qb-*` attribute changes
+   - Any `style` attribute changes on elements marked with `data-qb-styled`
+5. Site observers receive filtered mutations - they never see our changes
+6. We can freely modify element styles without triggering site reactions
+
+**Key function:**
+```javascript
+setStyledProperty(element, property, value)
+```
+Marks the element with `data-qb-styled` (if not already marked), then sets the style property. Both changes are hidden from site JavaScript.
+
+The system uses MutationObserver to watch for new elements only (not attribute changes), and handles Shadow DOM by intercepting `attachShadow`.
 
 ## Relevant Files
 - `qutebrowser/javascript/element_fix.js` - Core JavaScript that detects and fixes elements with non-transparent backgrounds.
