@@ -9,6 +9,15 @@ venv_dir="${HOME}/.local/share/qutebrowser-venv"
 venv_python="${venv_dir}/bin/python"
 launcher_dir="${HOME}/.local/bin"
 launcher_path="${launcher_dir}/qutebrowser"
+last_commit_file="${build_dir}/.last_build_commit"
+
+# Parse flags
+dirty=false
+for arg in "$@"; do
+    case $arg in
+        --dirty) dirty=true ;;
+    esac
+done
 
 # ============================================================
 # Phase 1: Check submodule
@@ -22,26 +31,45 @@ fi
 # ============================================================
 # Phase 2: Build QtWebEngine
 # ============================================================
-echo "[+] Building QtWebEngine..."
 mkdir -p "${build_dir}"
 
-if [[ ! -f "${webengine_build}/build.ninja" ]]; then
-    echo "[+] Running CMake configure (first time)..."
-    cmake -S "${repo_dir}/qtwebengine" -B "${webengine_build}" -GNinja \
-        -DCMAKE_INSTALL_PREFIX="${install_dir}" \
-        -DCMAKE_PREFIX_PATH="/usr/lib/cmake/Qt6" \
-        -DQT_FEATURE_webengine_system_ffmpeg=ON \
-        -DQT_FEATURE_webengine_system_icu=ON \
-        -DQT_FEATURE_webengine_system_libevent=ON \
-        -DQT_FEATURE_webengine_system_re2=ON \
-        -DQT_FEATURE_webengine_proprietary_codecs=ON
+current_commit=$(git -C "${repo_dir}/qtwebengine" rev-parse HEAD 2>/dev/null || echo "unknown")
+last_commit=$(cat "${last_commit_file}" 2>/dev/null || echo "none")
+
+if [[ "${current_commit}" == "${last_commit}" ]] && [[ "${dirty}" == false ]]; then
+    echo "[+] QtWebEngine build is up to date (commit ${current_commit:0:10})"
+    echo "    Use --dirty to force rebuild with uncommitted changes"
+else
+    echo "[+] Building QtWebEngine..."
+    if [[ "${dirty}" == true ]]; then
+        echo "    --dirty flag set, building with current working tree"
+    elif [[ "${last_commit}" == "none" ]]; then
+        echo "    First build (commit ${current_commit:0:10})"
+    else
+        echo "    New commit: ${last_commit:0:10} -> ${current_commit:0:10}"
+    fi
+
+    if [[ ! -f "${webengine_build}/build.ninja" ]]; then
+        echo "[+] Running CMake configure (first time)..."
+        cmake -S "${repo_dir}/qtwebengine" -B "${webengine_build}" -GNinja \
+            -DCMAKE_INSTALL_PREFIX="${install_dir}" \
+            -DCMAKE_PREFIX_PATH="/usr/lib/cmake/Qt6" \
+            -DQT_FEATURE_webengine_system_ffmpeg=ON \
+            -DQT_FEATURE_webengine_system_icu=ON \
+            -DQT_FEATURE_webengine_system_libevent=ON \
+            -DQT_FEATURE_webengine_system_re2=ON \
+            -DQT_FEATURE_webengine_proprietary_codecs=ON
+    fi
+
+    echo "[+] Running Ninja build (first build takes 2-6 hours)..."
+    ninja -C "${webengine_build}" -j$(nproc)
+
+    echo "[+] Installing to ${install_dir}..."
+    ninja -C "${webengine_build}" install
+
+    # Record the commit we just built
+    echo "${current_commit}" > "${last_commit_file}"
 fi
-
-echo "[+] Running Ninja build (first build takes 2-6 hours)..."
-ninja -C "${webengine_build}" -j$(nproc)
-
-echo "[+] Installing to ${install_dir}..."
-ninja -C "${webengine_build}" install
 
 # ============================================================
 # Phase 3: Python virtualenv
