@@ -3,7 +3,7 @@
 ## What Is a Submodule?
 
 A submodule is a **bookmark** to another git repository. Instead of copying 25GB of QtWebEngine code into your repo, you store:
-- The URL (pointing to **your fork**: `https://github.com/you/qtwebengine-fork.git`)
+- The URL (pointing to **your fork**: `https://github.com/Yeyito777/qtwebengine-element-shader.git`)
 - A commit hash (`abc123...`)
 
 That's ~100 bytes in your main repo. When you (or someone else) clones, git fetches the actual code from your fork.

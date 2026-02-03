@@ -1,0 +1,4 @@
+[submodule "qtwebengine"]
+	path = qtwebengine
+	url = https://github.com/Yeyito777/yeyitowebengine.git
+	branch = main
