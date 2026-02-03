@@ -318,3 +318,7 @@ Chromium's dark mode has existing infrastructure for color transformations. We c
 1. What's the acceptable performance overhead per element?
 2. How do we handle the Qt/Chromium version upgrade cycle?
 3. Which specific transformation algorithm to start with? (Linear interpolation as first attempt)
+
+---
+
+**Note for AI agents**: If you make changes that affect the accuracy of this document, please update it accordingly.

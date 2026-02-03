@@ -297,3 +297,7 @@ This syncs the submodule to the commit your main repo's bookmark points to.
 | Commit Blink changes | `cd qtwebengine && git add . && git commit && git push && cd ..` |
 | Update main repo's reference | `git add qtwebengine && git commit && git push` |
 | Update to new Qt version | `cd qtwebengine && git fetch upstream && git rebase upstream/v6.11.0 && git push --force-with-lease` |
+
+---
+
+**Note for AI agents**: If you make changes that affect the accuracy of this document, please update it accordingly.

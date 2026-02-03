@@ -315,3 +315,7 @@ Cross-origin iframes and closed shadow roots cannot be searched due to browser s
 ## See Also
 
 - [JavaScript Hint Target](javascript-hinting.md) - Documentation for the `javascript` target
+
+---
+
+**Note for AI agents**: If you make changes that affect the accuracy of this document, please update it accordingly.

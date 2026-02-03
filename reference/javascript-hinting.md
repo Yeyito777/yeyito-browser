@@ -82,3 +82,7 @@ Limitations / Future Work
   site).
 - Error reporting is currently limited to console warnings/errors and status
   bar messages.
+
+---
+
+**Note for AI agents**: If you make changes that affect the accuracy of this document, please update it accordingly.

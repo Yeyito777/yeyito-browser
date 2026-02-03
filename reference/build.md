@@ -325,3 +325,7 @@ CMake warnings about Qt version mismatches are usually safe to ignore if the bui
 rm -rf build/qtwebengine
 ./install.sh
 ```
+
+---
+
+**Note for AI agents**: If you make changes that affect the accuracy of this document, please update it accordingly.
