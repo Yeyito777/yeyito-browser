@@ -3,6 +3,14 @@ You're in my fork of qutebrowser's source. This fork includes a custom build of 
 
 **Important**: Do NOT run git commands (commit, push, checkout, etc.) unless explicitly instructed by the user. This includes the qtwebengine submodule. The user manages git operations manually to avoid confusion about which commit they're on.
 
+## Reference Files - Read These First
+
+| When user mentions... | Read this first |
+|-----------------------|-----------------|
+| **shader**, element shader, colors, CSS transforms | `reference/element-shader.md` |
+| **git** commands, commit, push, revert, submodule | `reference/submodules.md` |
+| **build**, install, compile | `reference/build.md` |
+
 ## Custom QtWebEngine Build
 
 This repo uses a **git submodule** (`qtwebengine/`) pointing to a custom fork of QtWebEngine. The custom build allows modifying Chromium's Blink engine directly.

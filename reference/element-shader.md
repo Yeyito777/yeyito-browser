@@ -9,35 +9,67 @@ The element shader intercepts Blink's style resolution to transform CSS properti
 The shader function lives in the anonymous namespace at the top of the file (after includes, inside `namespace blink { namespace {`):
 
 ```cpp
-// Line ~144
+// Line ~148
 // =============================================================================
 // ELEMENT SHADER - Transforms computed styles before rendering
 // =============================================================================
+
+// Helper: create gradient with alpha from original gradient's first/last stops
+StyleImage* CreateShaderGradient(float start_alpha, float end_alpha) {
+  Color start_color(0x00, 0x05, 0x0f);
+  Color end_color(0x09, 0x0d, 0x35);
+  start_color.SetAlpha(start_alpha);
+  end_color.SetAlpha(end_alpha);
+
+  auto* gradient = MakeGarbageCollected<cssvalue::CSSLinearGradientValue>(
+      nullptr, nullptr, nullptr, nullptr, nullptr,
+      cssvalue::kNonRepeating, cssvalue::kCSSLinearGradient);
+
+  cssvalue::CSSGradientColorStop stop1;
+  stop1.color_ = cssvalue::CSSColor::Create(start_color);
+  stop1.offset_ = CSSNumericLiteralValue::Create(0, CSSPrimitiveValue::UnitType::kPercentage);
+  gradient->AddStop(stop1);
+
+  cssvalue::CSSGradientColorStop stop2;
+  stop2.color_ = cssvalue::CSSColor::Create(end_color);
+  stop2.offset_ = CSSNumericLiteralValue::Create(100, CSSPrimitiveValue::UnitType::kPercentage);
+  gradient->AddStop(stop2);
+
+  return MakeGarbageCollected<StyleGeneratedImage>(
+      *gradient, CSSToLengthConversionData::ContainerSizes());
+}
+
 void ApplyElementShader(StyleResolverState& state) {
   ComputedStyleBuilder& builder = state.StyleBuilder();
+  // ... text color setup ...
 
-  // Target colors
-  const Color kTargetBackground(0x00, 0x05, 0x0f);  // #00050f
-  const Color kTargetText(0xff, 0xff, 0xff);        // #ffffff
-  const StyleColor kTargetTextStyle(kTargetText);
-
-  // Set all text-related colors to white
-  builder.SetColor(kTargetTextStyle);                        // Main text color
-  builder.SetTextFillColor(kTargetTextStyle);                // -webkit-text-fill-color (overrides color)
-  builder.SetInternalVisitedColor(kTargetTextStyle);         // Visited link color
-  builder.SetInternalVisitedTextFillColor(kTargetTextStyle); // Visited link fill color
-
-  // Get the current background color
-  OptionalStyleColor bg_opt = ColorPropertyFunctions::GetUnvisitedColor(
-      GetCSSPropertyBackgroundColor(), builder);
-
-  if (!bg_opt.has_value()) {
-    return;  // No background color property
+  // Check for gradients in background layers and replace them
+  FillLayer& bg_layers = builder.AccessBackgroundLayers();
+  for (FillLayer* layer = &bg_layers; layer; layer = layer->Next()) {
+    StyleImage* image = layer->GetImage();
+    if (image && image->IsGeneratedImage()) {
+      const auto* generated = DynamicTo<StyleGeneratedImage>(image);
+      if (generated) {
+        const CSSValue* css_value = generated->CssValue();
+        if (css_value && css_value->IsGradientValue()) {
+          // Extract alpha from original gradient
+          float start_alpha = 1.0f, end_alpha = 1.0f;
+          const auto* gradient_value = DynamicTo<cssvalue::CSSGradientValue>(css_value);
+          if (gradient_value && gradient_value->StopCount() > 0 && state.ParentStyle()) {
+            Vector<Color> stop_colors = gradient_value->GetStopColors(
+                state.GetDocument(), *state.ParentStyle());
+            if (!stop_colors.empty()) {
+              start_alpha = stop_colors.front().Alpha();
+              end_alpha = stop_colors.back().Alpha();
+            }
+          }
+          layer->SetImage(CreateShaderGradient(start_alpha, end_alpha));
+        }
+      }
+    }
   }
 
-  const StyleColor& bg_style_color = bg_opt.value();
-
-  // If it's currentcolor, skip background modification
+  // ... background color handling ...
   if (bg_style_color.IsCurrentColor()) {
     return;
   }
@@ -167,6 +199,66 @@ vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolv
 | `color_property_functions.h` | `ColorPropertyFunctions` for reading color properties |
 | `longhands.h` | `GetCSSPropertyBackgroundColor()` and other property accessors |
 | `platform/graphics/color.h` | `Color` class with `IsFullyTransparent()` |
+| `css_gradient_value.h` | `CSSLinearGradientValue`, `CSSGradientColorStop` for gradients |
+| `css_color.h` | `CSSColor::Create()` for gradient color stops |
+| `css_numeric_literal_value.h` | `CSSNumericLiteralValue::Create()` for percentages |
+| `style_generated_image.h` | `StyleGeneratedImage` wrapper for gradients |
+| `fill_layer.h` | `FillLayer` for accessing background-image layers |
+
+## Gradient Handling
+
+Gradients are part of `background-image` and stored in `FillLayer`. To modify them:
+
+### Required Includes
+
+```cpp
+#include "third_party/blink/renderer/core/css/css_color.h"
+#include "third_party/blink/renderer/core/css/css_gradient_value.h"
+#include "third_party/blink/renderer/core/css/css_numeric_literal_value.h"
+#include "third_party/blink/renderer/core/style/style_generated_image.h"
+```
+
+### Detecting Gradients
+
+```cpp
+FillLayer& bg_layers = builder.AccessBackgroundLayers();
+for (FillLayer* layer = &bg_layers; layer; layer = layer->Next()) {
+  StyleImage* image = layer->GetImage();
+  if (image && image->IsGeneratedImage()) {
+    const auto* generated = DynamicTo<StyleGeneratedImage>(image);
+    if (generated && generated->CssValue()->IsGradientValue()) {
+      // This layer has a gradient
+    }
+  }
+}
+```
+
+### Creating a Gradient
+
+```cpp
+// Create linear gradient
+auto* gradient = MakeGarbageCollected<cssvalue::CSSLinearGradientValue>(
+    nullptr, nullptr, nullptr, nullptr, nullptr,  // direction params (nullptr = top to bottom)
+    cssvalue::kNonRepeating, cssvalue::kCSSLinearGradient);
+
+// Add color stops
+cssvalue::CSSGradientColorStop stop;
+stop.color_ = cssvalue::CSSColor::Create(Color(0x00, 0x05, 0x0f));
+stop.offset_ = CSSNumericLiteralValue::Create(0, CSSPrimitiveValue::UnitType::kPercentage);
+gradient->AddStop(stop);
+
+// Wrap in StyleGeneratedImage and set on layer
+layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
+    *gradient, CSSToLengthConversionData::ContainerSizes()));
+```
+
+### Gradient Types
+
+| Class | CSS Function |
+|-------|--------------|
+| `CSSLinearGradientValue` | `linear-gradient()` |
+| `CSSRadialGradientValue` | `radial-gradient()` |
+| `CSSConicGradientValue` | `conic-gradient()` |
 
 ## TODO
 
@@ -174,7 +266,7 @@ vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolv
 
 2. ~~**Preserve transparency**~~ - DONE: Now checks `IsFullyTransparent()` before modifying background.
 
-3. **Handle gradients** - `background-image` with gradients needs separate handling via `FillLayer`.
+3. ~~**Handle gradients**~~ - DONE: Detects gradients via `FillLayer` and replaces them with custom linear gradient (#00050f to #090d35). Preserves alpha from original gradient's first/last stops.
 
 4. **CLI configuration** - Pass target colors from qutebrowser config via CLI flags (see `darkmode.py` for pattern).
 
