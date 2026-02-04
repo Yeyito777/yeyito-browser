@@ -9,22 +9,49 @@ The element shader intercepts Blink's style resolution to transform CSS properti
 The shader function lives in the anonymous namespace at the top of the file (after includes, inside `namespace blink { namespace {`):
 
 ```cpp
-// Line ~143
+// Line ~144
 // =============================================================================
 // ELEMENT SHADER - Transforms computed styles before rendering
 // =============================================================================
 void ApplyElementShader(StyleResolverState& state) {
   ComputedStyleBuilder& builder = state.StyleBuilder();
 
-  // Target colors (hardcoded for now)
+  // Target colors
   const Color kTargetBackground(0x00, 0x05, 0x0f);  // #00050f
   const Color kTargetText(0xff, 0xff, 0xff);        // #ffffff
+  const StyleColor kTargetTextStyle(kTargetText);
 
-  // Force background color to target
+  // Set all text-related colors to white
+  builder.SetColor(kTargetTextStyle);                        // Main text color
+  builder.SetTextFillColor(kTargetTextStyle);                // -webkit-text-fill-color (overrides color)
+  builder.SetInternalVisitedColor(kTargetTextStyle);         // Visited link color
+  builder.SetInternalVisitedTextFillColor(kTargetTextStyle); // Visited link fill color
+
+  // Get the current background color
+  OptionalStyleColor bg_opt = ColorPropertyFunctions::GetUnvisitedColor(
+      GetCSSPropertyBackgroundColor(), builder);
+
+  if (!bg_opt.has_value()) {
+    return;  // No background color property
+  }
+
+  const StyleColor& bg_style_color = bg_opt.value();
+
+  // If it's currentcolor, skip background modification
+  if (bg_style_color.IsCurrentColor()) {
+    return;
+  }
+
+  // Get the actual color value
+  Color bg_color = bg_style_color.GetColor();
+
+  // Skip background modification if fully transparent
+  if (bg_color.IsFullyTransparent()) {
+    return;
+  }
+
+  // Background is not transparent, apply our target color
   builder.SetBackgroundColor(StyleColor(kTargetBackground));
-
-  // Force text color to target
-  builder.SetColor(StyleColor(kTargetText));
 }
 // =============================================================================
 ```
@@ -65,12 +92,27 @@ builder.SetTextStrokeColor(StyleColor(...));
 builder.SetColumnRuleColor(GapDataList<StyleColor>(...));
 ```
 
-### Reading Style Properties (currently protected - see TODO)
+### Reading Style Properties
 
-The getters like `BackgroundColor()`, `Color()` are **protected** in `ComputedStyleBuilderBase`. To read before modifying, we need to either:
-1. Make them public
-2. Add the shader as a friend class
-3. Use `ColorPropertyFunctions` (already a friend)
+Use `ColorPropertyFunctions` (a friend class) to read protected style properties:
+
+```cpp
+#include "third_party/blink/renderer/core/animation/color_property_functions.h"
+
+// Get background color from builder
+OptionalStyleColor bg_opt = ColorPropertyFunctions::GetUnvisitedColor(
+    GetCSSPropertyBackgroundColor(), builder);
+
+if (bg_opt.has_value()) {
+  const StyleColor& style_color = bg_opt.value();
+  if (!style_color.IsCurrentColor()) {
+    Color color = style_color.GetColor();
+    if (!color.IsFullyTransparent()) {
+      // color has non-transparent background
+    }
+  }
+}
+```
 
 ### Color Construction
 
@@ -122,17 +164,15 @@ vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolv
 | `style_resolver_state.h` | `StyleResolverState` class - provides `StyleBuilder()` |
 | `computed_style.h` | `ComputedStyleBuilder` class (line ~2696) |
 | `computed_style_base.h` | Auto-generated base with getters/setters |
-| `color_property_functions.cc` | Reference for color get/set patterns |
-| `platform/graphics/color.h` | `Color` class |
+| `color_property_functions.h` | `ColorPropertyFunctions` for reading color properties |
+| `longhands.h` | `GetCSSPropertyBackgroundColor()` and other property accessors |
+| `platform/graphics/color.h` | `Color` class with `IsFullyTransparent()` |
 
 ## TODO
 
-1. **Unprotect style getters** - `BackgroundColor()`, `Color()`, and other getters in `ComputedStyleBuilderBase` are protected. Options:
-   - Make them public in `gen/third_party/blink/renderer/core/style/computed_style_base.h` (auto-generated, need to find generator)
-   - Add `ApplyElementShader` as a friend function to `ComputedStyleBuilder`
-   - Create a helper class that's already a friend (like `ColorPropertyFunctions`)
+1. ~~**Unprotect style getters**~~ - SOLVED: Using `ColorPropertyFunctions::GetUnvisitedColor()` which is already a friend class.
 
-2. **Preserve transparency** - Currently we overwrite all backgrounds including transparent ones. Need to read alpha before deciding to modify.
+2. ~~**Preserve transparency**~~ - DONE: Now checks `IsFullyTransparent()` before modifying background.
 
 3. **Handle gradients** - `background-image` with gradients needs separate handling via `FillLayer`.
 
