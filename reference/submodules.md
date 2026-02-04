@@ -3,7 +3,7 @@
 ## What Is a Submodule?
 
 A submodule is a **bookmark** to another git repository. Instead of copying 25GB of QtWebEngine code into your repo, you store:
-- The URL (pointing to **your fork**: `https://github.com/Yeyito777/qtwebengine-element-shader.git`)
+- The URL (pointing to **your fork**: `https://github.com/Yeyito777/yeyitowebengine.git`)
 - A commit hash (`abc123...`)
 
 That's ~100 bytes in your main repo. When you (or someone else) clones, git fetches the actual code from your fork.
@@ -22,7 +22,7 @@ Qt's upstream                   Your fork                      Your qutebrowser 
 ────────────                    ────────────────               ──────────────────────
 qtwebengine                     qtwebengine-fork               Qutebrowser/
 ├── v6.10.0                     ├── v6.10.0                    └── qtwebengine/ ────▶ your fork
-├── v6.11.0                     └── element-shader branch          @ element-shader
+├── v6.11.0                     └── main branch          @ main
 └── ...                             ├── commit: "Add shader"       (your changes included!)
                                     └── commit: "Fix bug"
 ```
@@ -65,7 +65,7 @@ git push origin HEAD:main
 cd ../..  # now in qtwebengine/
 git add src/3rdparty
 git commit -m "Update 3rdparty submodule"
-git push origin element-shader
+git push origin main
 
 # 3. Commit in Qutebrowser (update qtwebengine reference)
 cd ..  # now in Qutebrowser/
@@ -74,7 +74,7 @@ git commit -m "Update qtwebengine"
 git push
 ```
 
-**Note**: The `src/3rdparty` submodule currently points to Qt's upstream repo (`qt/qtwebengine-chromium`). To push changes there, you'd need to fork `qtwebengine-chromium` too and update the URL in qtwebengine's `.gitmodules`.
+**Note**: The `src/3rdparty` submodule points to `Yeyito777/qtwebengine-chromium` (our fork).
 
 ## Mental Model
 
@@ -82,7 +82,7 @@ git push
 YOUR QUTEBROWSER REPO                    YOUR QTWEBENGINE FORK
 ─────────────────────                    ─────────────────────
 Qutebrowser/                             github.com/you/qtwebengine-fork
-├── qutebrowser/    ← your Python code   ├── element-shader branch
+├── qutebrowser/    ← your Python code   ├── main branch
 ├── install.sh                           │   └── your Blink modifications
 └── qtwebengine/    ← submodule ─────────┘       (committed, tracked, shared)
     (bookmark)
@@ -119,7 +119,7 @@ git remote add upstream https://code.qt.io/qt/qtwebengine.git
 git checkout v6.10.0
 
 # Create your feature branch
-git checkout -b element-shader
+git checkout -b main
 
 # Initialize the Chromium submodule (~25GB download, takes a while)
 git submodule update --init --recursive
@@ -134,7 +134,7 @@ vim src/3rdparty/chromium/third_party/blink/renderer/core/css/resolver/style_res
 # Commit to your fork
 git add .
 git commit -m "Add element shader hook to style resolver"
-git push origin element-shader
+git push origin main
 ```
 
 ### Step 4: Add Fork as Submodule in Qutebrowser
@@ -143,7 +143,7 @@ git push origin element-shader
 cd /path/to/Qutebrowser
 
 # Add YOUR fork (not Qt's upstream!) as a submodule
-git submodule add -b element-shader https://github.com/you/qtwebengine-fork.git qtwebengine
+git submodule add -b main https://github.com/you/qtwebengine-fork.git qtwebengine
 
 # Fetch the submodule content
 git submodule update --init --recursive
@@ -179,7 +179,7 @@ When you're happy with your changes:
 cd qtwebengine
 git add .
 git commit -m "Improve element shader color transformation"
-git push origin element-shader
+git push origin main
 cd ..
 
 # Step 2: Update submodule reference in main repo
@@ -223,7 +223,7 @@ git submodule update --init --recursive
 ```bash
 # See which commit the submodule points to
 git submodule status
-#  abc123def qtwebengine (element-shader)
+#  abc123def qtwebengine (main)
 
 # See what branch/commit you're on in the submodule
 cd qtwebengine
@@ -249,7 +249,7 @@ git rebase upstream/v6.11.0
 git submodule update --init --recursive
 
 # Push to your fork (force needed because of rebase)
-git push origin element-shader --force-with-lease
+git push origin main --force-with-lease
 
 cd ..
 
@@ -276,7 +276,7 @@ cd ..
 ```bash
 cd qtwebengine
 git fetch origin
-git reset --hard origin/element-shader
+git reset --hard origin/main
 git submodule update --init --recursive
 cd ..
 ```
@@ -329,7 +329,7 @@ This syncs the submodule to the commit your main repo's bookmark points to.
 [submodule "qtwebengine"]
     path = qtwebengine
     url = https://github.com/you/qtwebengine-fork.git
-    branch = element-shader
+    branch = main
 ```
 
 **`qtwebengine/`** - The actual directory (content fetched from your fork)

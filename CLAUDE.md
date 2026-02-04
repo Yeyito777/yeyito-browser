@@ -30,9 +30,19 @@ vim qtwebengine/src/3rdparty/chromium/...
 ./install.sh --dirty
 ~/.local/bin/qutebrowser
 
-# 3. Commit to submodule, then update main repo (user does this manually)
-cd qtwebengine && git add . && git commit -m "msg" && git push && cd ..
-git add qtwebengine && git commit -m "Update yeyitowebengine"
+# 3. Commit up the ladder (3 levels - user does this manually)
+cd qtwebengine/src/3rdparty && git add . && git commit -m "msg" && git push
+cd ../.. && git add src/3rdparty && git commit -m "Update chromium" && git push
+cd .. && git add qtwebengine && git commit -m "Update qtwebengine" && git push
+```
+
+### Submodule Structure
+
+```
+Qutebrowser/                     ← main repo (Yeyito777/yeyito-browser)
+└── qtwebengine/                 ← submodule (Yeyito777/yeyitowebengine)
+    └── src/3rdparty/            ← nested submodule (Yeyito777/qtwebengine-chromium)
+        └── chromium/...         ← Blink source lives here
 ```
 
 ### Key Blink Files (in `qtwebengine/src/3rdparty/chromium/`)

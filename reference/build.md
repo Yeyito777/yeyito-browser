@@ -13,24 +13,23 @@ To implement the element shader (see `element-shader.md`), we need to modify Chr
 
 ## Current Setup
 
-- **Fork URL**: https://github.com/Yeyito777/qtwebengine-element-shader (private)
-- **Branch**: `element-shader`
-- **Base version**: Qt 6.10.0 (tag `v6.10.0`)
+- **QtWebEngine fork**: https://github.com/Yeyito777/yeyitowebengine
+- **Chromium fork**: https://github.com/Yeyito777/qtwebengine-chromium
+- **Branch**: `main` (both repos)
+- **Base version**: Qt 6.10.0
 - **Verification**: Custom log message in `browser_main_loop.cc`
 
 ## Architecture
 
 ```
-Qt's upstream repo              Your fork (GitHub)              Your qutebrowser repo
-(github.com/qt)                 (github.com/Yeyito777)          (this repo)
-────────────────                ──────────────────────          ────────────────────
-qtwebengine                     qtwebengine-element-shader      Qutebrowser/
-├── v6.10.0 tag                 ├── element-shader branch       └── qtwebengine/ ──▶ your fork
-├── v6.11.0 tag                 └── your commits!                   @ element-shader
-└── ...                                                             (includes your changes!)
+Qt's upstream                   Your forks (GitHub)                 Your main repo
+─────────────                   ───────────────────                 ──────────────
+qt/qtwebengine                  Yeyito777/yeyitowebengine           Yeyito777/yeyito-browser
+qt/qtwebengine-chromium         Yeyito777/qtwebengine-chromium      └── qtwebengine/ ──▶ yeyitowebengine
+                                                                        └── src/3rdparty/ ──▶ qtwebengine-chromium
 ```
 
-When someone clones your qutebrowser repo, they get your fork with your changes automatically.
+When someone clones your repo with `--recurse-submodules`, they get both forks with all your changes.
 
 ## Directory Structure
 
@@ -170,60 +169,34 @@ We use a **private fork** of QtWebEngine with a **git submodule** because:
 - **Version controlled**: Full git history of your Blink patches
 - **Easy Qt updates**: Rebase your branch onto new upstream tags
 
-### Initial Setup (What We Actually Did)
+### Initial Setup (Historical Reference)
 
-```bash
-# 1. Create private repo (can't fork public to private on GitHub)
-gh repo create Yeyito777/qtwebengine-element-shader --private --description "Custom QtWebEngine fork for element shader"
-
-# 2. Clone Qt's repo and push to our private repo
-cd /tmp
-git clone --branch v6.10.0 --single-branch https://github.com/qt/qtwebengine.git qtwebengine-temp
-cd qtwebengine-temp
-git checkout -b element-shader
-git remote set-url origin https://github.com/Yeyito777/qtwebengine-element-shader.git
-git push -u origin element-shader
-
-# 3. Fix the nested submodule URL (relative URL doesn't work for private repos)
-# Edit .gitmodules to use absolute URL:
-#   url = https://github.com/qt/qtwebengine-chromium.git
-git add .gitmodules
-git commit -m "Fix chromium submodule URL to use absolute path"
-git push origin element-shader
-
-# 4. Cleanup temp
-cd /tmp && rm -rf qtwebengine-temp
-
-# 5. Add submodule to Qutebrowser
-cd /home/yeyito/Workspace/Qutebrowser
-git submodule add -b element-shader https://github.com/Yeyito777/qtwebengine-element-shader.git qtwebengine
-
-# 6. Initialize the Chromium submodule (~6GB download, ~1 hour)
-cd qtwebengine
-git submodule update --init --recursive
-```
+The forks were set up by:
+1. Forking `qt/qtwebengine` → `Yeyito777/yeyitowebengine`
+2. Forking `qt/qtwebengine-chromium` → `Yeyito777/qtwebengine-chromium` (via `gh repo fork`)
+3. Updating `.gitmodules` in yeyitowebengine to point to the chromium fork
+4. Adding yeyitowebengine as a submodule in the main repo
 
 ### Daily Workflow
 
 ```bash
-# 1. Edit Chromium/Blink source
-vim qtwebengine/src/3rdparty/chromium/content/browser/browser_main_loop.cc
+# 1. Edit Blink source
+vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolver/style_resolver.cc
 
 # 2. Build and test
-./install.sh
-~/.local/bin/qutebrowser --qt-flag enable-logging --qt-flag log-level=0 2>&1 | grep YEYITO
+./install.sh --dirty
+~/.local/bin/qutebrowser
 
-# 3. Happy with changes? Commit to your fork
-cd qtwebengine
-git add .
-git commit -m "Improve element shader color transformation"
-git push origin element-shader
+# 3. Happy with changes? Commit up the ladder (3 levels)
+cd qtwebengine/src/3rdparty
+git add . && git commit -m "Description" && git push origin main
 cd ..
 
-# 4. Update submodule reference in main repo
-git add qtwebengine
-git commit -m "Update qtwebengine with improved shader"
-git push
+cd ../..  # now in qtwebengine/
+git add src/3rdparty && git commit -m "Update chromium" && git push origin main
+
+cd ..  # now in Qutebrowser/
+git add qtwebengine && git commit -m "Update qtwebengine" && git push
 ```
 
 If no changes were made to QtWebEngine:
@@ -255,7 +228,7 @@ git rebase upstream/v6.11.0
 
 # Resolve any conflicts, then:
 git submodule update --init --recursive
-git push origin element-shader --force-with-lease
+git push origin main --force-with-lease
 
 cd ..
 
