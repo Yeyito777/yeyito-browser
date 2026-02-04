@@ -1,324 +1,143 @@
-# Element-Wise Shader Implementation
+# Element Shader
 
-## Goal
+The element shader intercepts Blink's style resolution to transform CSS properties before rendering. Modifications are invisible to JavaScript - we modify the render, not the DOM.
 
-Implement an "element-wise shader" that intercepts elements before they're rendered, allowing us to:
-1. **Read** computed style properties (e.g., background color, transparency)
-2. **Write** modified style properties (e.g., set background to blue)
+## Injection Point
 
-The key requirement: **modifications must be invisible to the page's JavaScript**. We're not modifying the DOM - we're modifying our render of it.
+**File:** `qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolver/style_resolver.cc`
 
-## Shader Requirements
-
-The shader must transform colors using a "magnetic pole" approach - pulling element colors toward user-defined target colors.
-
-### Properties to Modify
-
-| Property | Description |
-|----------|-------------|
-| `background-color` | Transform toward user's target background |
-| `color` | Transform toward user's target text color |
-| `background-image` (gradients) | Transform gradient color stops |
-| `::before` / `::after` | Pseudo-elements go through same style resolution |
-| `:hover` / `:focus` / etc. | State changes trigger re-resolution, automatically handled |
-
-### Configuration (Python Side)
-
-Users configure in qutebrowser's `config.py`:
-
-```python
-c.shader.background = "#1a1a1a"  # Target background color
-c.shader.text = "#e0e0e0"        # Target text color
-```
-
-These get passed as CLI flags (like dark mode):
-
-```
-qutebrowser config.py          qutebrowser/config/qtargs.py         Chromium/Blink
-─────────────────────          ────────────────────────────         ─────────────
-c.shader.background = "#1a1a1a"  →  --element-shader-settings=      →  Parse flags
-c.shader.text = "#e0e0e0"            TargetBg=1a1a1a,TargetText=e0e0e0   Apply in style resolution
-```
-
-### Algorithm
-
-The transformation algorithm is **pluggable**. Start with linear interpolation, iterate from there. The hook framework is what matters - the algorithm is a parameter.
-
-Initial algorithm ideas:
-- Linear interpolation toward target
-- Contrast-preserving remapping
-- Luminance-based pole attraction
-
-## Mental Model
-
-```
-Page's DOM + CSSOM
-        ↓
-   Style Resolution (Blink computes final styles)
-        ↓
-   ┌─────────────────────────────────────────┐
-   │  DESIRED INTERCEPTION POINT             │
-   │  Read ComputedStyle → Apply transform   │
-   └─────────────────────────────────────────┘
-        ↓
-   Layout (positions and sizes calculated)
-        ↓
-   Paint (drawing instructions generated)
-        ↓
-   Compositor → GPU → Pixels
-```
-
-The "message" we want to intercept is the `ComputedStyle` object that Blink creates for each element after resolving all CSS rules.
-
-## Investigation Summary
-
-### What QtWebEngine Exposes
-
-QtWebEngine is a wrapper around Chromium's Blink engine. It exposes:
-
-| API | Level | Can Read Styles? | Can Modify Invisibly? |
-|-----|-------|------------------|----------------------|
-| JavaScript injection | DOM | Yes (`getComputedStyle`) | No (page can detect) |
-| `--blink-settings` flags | Blink engine | No | Yes (but fixed algorithms) |
-| `--dark-mode-settings` flags | Blink engine | No | Yes (but fixed algorithms) |
-| Network interceptor | HTTP | No | N/A |
-| DevTools Protocol | CSSOM | Yes | No (modifies CSSOM) |
-
-### How Dark Mode Works (The Closest Thing)
-
-Qutebrowser's `darkmode.py` passes command-line flags to Chromium:
-
-```
---blink-settings=forceDarkModeEnabled=true
---dark-mode-settings=InversionAlgorithm=4,ImagePolicy=2
-```
-
-This operates at the Blink level - the page cannot detect these color transformations. However:
-- Only predefined algorithms available (`brightness-rgb`, `lightness-hsl`, `lightness-cielab`)
-- Global application, no per-element logic
-- No ability to read element properties and make decisions
-- Settings are fixed at browser startup
-
-### JavaScript Injection Approach (Rejected)
-
-We previously attempted a JavaScript-based "shader" (`element_fix.js`) that:
-1. Injected at `DocumentCreation` (before page scripts)
-2. Intercepted `MutationObserver` to hide our changes from site code
-3. Used `getComputedStyle()` to read properties
-4. Modified `element.style` to change appearance
-
-**Problems with this approach:**
-
-1. **DOM Modification is Visible**
-   - Even with MutationObserver interception, the DOM is modified
-   - Page can detect changes via other means (polling, getComputedStyle comparison)
-   - Violates the principle of "modify render, not DOM"
-
-2. **CSS Loading is Asynchronous**
-   - Elements may render before their styles are fully loaded
-   - `getComputedStyle()` returns intermediate values
-   - Results in flash of incorrectly styled content (FOISC)
-   - No reliable way to know when styles are "final"
-
-3. **iframes and Shadow DOM**
-   - Each iframe is a separate document requiring separate injection
-   - Cross-origin iframes cannot be accessed
-   - Shadow DOM requires intercepting `attachShadow()` and observing each shadow root
-   - Complex, fragile, and incomplete coverage
-
-4. **Performance and Stability**
-   - MutationObserver batching causes visible delays
-   - Risk of infinite loops if site reacts to our changes
-   - Previous implementation caused tab crashes
-
-## The Core Problem
-
-Chromium does not expose any API to:
-- Hook into style resolution
-- Modify `ComputedStyle` objects before layout/paint
-- Register per-element render callbacks
-- Inject custom logic into the rendering pipeline
-
-The rendering pipeline is completely encapsulated within Blink. QtWebEngine provides no access to it beyond what Chromium's command-line flags offer.
-
-## The Solution: Modify QtWebEngine
-
-To achieve a true element-wise shader, we must modify Chromium's Blink engine. **QtWebEngine bundles Chromium** - you don't download them separately.
-
-### What to Download
-
-**Only QtWebEngine source is needed** (it contains Chromium/Blink):
-
-```bash
-git clone https://code.qt.io/qt/qtwebengine.git
-cd qtwebengine
-git submodule update --init --recursive  # Pulls Chromium (~20-25GB)
-```
-
-### Target Files in QtWebEngine
-
-The style resolution pipeline lives in:
-
-```
-qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/
-├── resolver/
-│   ├── style_resolver.cc          ← Main style resolution logic
-│   ├── style_resolver.h
-│   └── style_resolver_state.cc
-├── computed_style.cc              ← ComputedStyle object
-└── css_computed_style_declaration.cc
-```
-
-Additional files for CLI flag support:
-
-```
-qtwebengine/src/3rdparty/chromium/
-├── third_party/blink/public/common/switches.cc    ← Add CLI flag definition
-├── third_party/blink/renderer/core/css/properties/ ← CSS property accessors
-```
-
-Key classes:
-- `StyleResolver` - Resolves CSS rules to compute final styles
-- `ComputedStyle` - Immutable object holding resolved style values
-- `StyleResolverState` - Mutable state during resolution
-
-### Proposed Hook Point
-
-In `style_resolver.cc`, the `StyleResolver::ResolveStyle()` method computes the final `ComputedStyle` for an element. We could add a hook:
+The shader function lives in the anonymous namespace at the top of the file (after includes, inside `namespace blink { namespace {`):
 
 ```cpp
-// In StyleResolver::ResolveStyle() or similar
-scoped_refptr<ComputedStyle> StyleResolver::ResolveStyle(Element* element, ...) {
-    // ... existing style resolution logic ...
+// Line ~143
+// =============================================================================
+// ELEMENT SHADER - Transforms computed styles before rendering
+// =============================================================================
+void ApplyElementShader(StyleResolverState& state) {
+  ComputedStyleBuilder& builder = state.StyleBuilder();
 
-    scoped_refptr<ComputedStyle> computed_style = /* resolved style */;
+  // Target colors (hardcoded for now)
+  const Color kTargetBackground(0x00, 0x05, 0x0f);  // #00050f
+  const Color kTargetText(0xff, 0xff, 0xff);        // #ffffff
 
-    // NEW: Element shader hook
-    if (element_shader_callback_) {
-        computed_style = element_shader_callback_(element, computed_style);
-    }
+  // Force background color to target
+  builder.SetBackgroundColor(StyleColor(kTargetBackground));
 
-    return computed_style;
+  // Force text color to target
+  builder.SetColor(StyleColor(kTargetText));
+}
+// =============================================================================
+```
+
+The shader is called in `StyleResolver::ResolveStyle()` right before the style is returned:
+
+```cpp
+// Line ~1385
+  state.LoadPendingResources();
+
+  // Apply element shader (transforms colors before rendering)
+  ApplyElementShader(state);
+
+  // Now return the style.
+  return state.TakeStyle();
 }
 ```
 
-### What the Hook Would Provide
+## Available APIs
+
+### Writing Style Properties (public setters on ComputedStyleBuilder)
 
 ```cpp
-struct ElementShaderInput {
-    // Read-only element info
-    const Element* element;
-    const ComputedStyle* original_style;
+ComputedStyleBuilder& builder = state.StyleBuilder();
 
-    // Contextual info
-    bool is_in_shadow_dom;
-    bool is_in_iframe;
-    Document* document;
-};
-
-struct ElementShaderOutput {
-    // Modified style properties
-    std::optional<Color> background_color;
-    std::optional<Color> color;
-    std::optional<Color> border_color;
-    // ... other properties
-};
-
-using ElementShaderCallback = std::function<ElementShaderOutput(const ElementShaderInput&)>;
+// Colors
+builder.SetBackgroundColor(StyleColor(Color(r, g, b)));
+builder.SetColor(StyleColor(Color(r, g, b)));  // text color
+builder.SetBorderTopColor(StyleColor(...));
+builder.SetBorderBottomColor(StyleColor(...));
+builder.SetBorderLeftColor(StyleColor(...));
+builder.SetBorderRightColor(StyleColor(...));
+builder.SetOutlineColor(StyleColor(...));
+builder.SetCaretColor(StyleAutoColor(...));
+builder.SetTextDecorationColor(StyleColor(...));
+builder.SetTextEmphasisColor(StyleColor(...));
+builder.SetTextStrokeColor(StyleColor(...));
+builder.SetColumnRuleColor(GapDataList<StyleColor>(...));
 ```
 
-### Integration with qutebrowser
+### Reading Style Properties (currently protected - see TODO)
 
-Using CLI flags (like dark mode) - no QtWebEngine API changes needed beyond Blink modifications.
+The getters like `BackgroundColor()`, `Color()` are **protected** in `ComputedStyleBuilderBase`. To read before modifying, we need to either:
+1. Make them public
+2. Add the shader as a friend class
+3. Use `ColorPropertyFunctions` (already a friend)
 
-**Python side (minimal changes):**
+### Color Construction
 
-1. Add config options in `qutebrowser/config/configdata.yml`:
-   ```yaml
-   shader.background:
-     type: QtColor
-     default: null
-     desc: Target background color for element shader
+```cpp
+#include "third_party/blink/renderer/platform/graphics/color.h"
 
-   shader.text:
-     type: QtColor
-     default: null
-     desc: Target text color for element shader
-   ```
+// RGB (0-255)
+Color color(0x1a, 0x1a, 0x1a);  // #1a1a1a
 
-2. Add flag generation in `qutebrowser/config/qtargs.py` (similar to `darkmode.py`):
-   ```python
-   def _shader_settings(settings):
-       # Generate --element-shader-settings flag from config
-       ...
-   ```
+// RGBA
+Color color(0x1a, 0x1a, 0x1a, 0x80);  // 50% alpha
 
-### Build Requirements
+// Wrap in StyleColor for setters
+StyleColor style_color(color);
+builder.SetBackgroundColor(style_color);
+```
 
-QtWebEngine build:
-- ~25GB disk space for source
-- ~100GB with build artifacts
-- 16GB+ RAM recommended
-- 2-6 hours build time depending on hardware
-- Must rebuild when Qt updates Chromium version
+### Accessing Element Info
 
-## Implementation Plan
+```cpp
+// Get the element being styled
+Element& element = state.GetElement();
 
-### Phase 1: QtWebEngine/Blink Modifications
+// Check element type
+if (IsA<HTMLBodyElement>(element)) { ... }
 
-1. **Add CLI flag parsing** in Blink's switches
-2. **Add hook in `StyleResolver::ResolveStyle()`** to intercept computed styles
-3. **Implement transformation algorithm** (start with linear interpolation)
-4. **Handle special cases**: gradients, pseudo-elements, state changes
+// Get document
+Document& doc = state.GetDocument();
+```
 
-### Phase 2: qutebrowser Integration
+## Build & Test
 
-1. **Add config options** in `configdata.yml`
-2. **Add flag generation** in `qtargs.py`
-3. **Build and test** with custom QtWebEngine
+```bash
+# Edit the shader
+vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolver/style_resolver.cc
 
-### Alternative Considered: Extend Dark Mode Infrastructure
+# Build (1-5 min for single file change)
+./install.sh --dirty
 
-Chromium's dark mode has existing infrastructure for color transformations. We could add new `DarkModeInversionAlgorithm` values, but this approach is too limited:
-- Algorithms are predefined, not pluggable
-- No access to read computed styles before transformation
-- Less control over per-property behavior
+# Test
+~/.local/bin/qutebrowser
+```
 
-**Decision**: Implement a proper ComputedStyle hook for full flexibility.
-
-## Files Referenced
-
-### qutebrowser (Python side - to modify)
+## Key Files Reference
 
 | File | Purpose |
 |------|---------|
-| `qutebrowser/config/configdata.yml` | Add `shader.background`, `shader.text` options |
-| `qutebrowser/config/qtargs.py` | Generate `--element-shader-settings` flag |
-| `qutebrowser/browser/webengine/darkmode.py` | Reference for how dark mode flags work |
+| `style_resolver.cc` | Shader injection point |
+| `style_resolver_state.h` | `StyleResolverState` class - provides `StyleBuilder()` |
+| `computed_style.h` | `ComputedStyleBuilder` class (line ~2696) |
+| `computed_style_base.h` | Auto-generated base with getters/setters |
+| `color_property_functions.cc` | Reference for color get/set patterns |
+| `platform/graphics/color.h` | `Color` class |
 
-### QtWebEngine/Chromium (Blink side - to modify)
+## TODO
 
-| File | Purpose |
-|------|---------|
-| `src/3rdparty/chromium/third_party/blink/renderer/core/css/resolver/style_resolver.cc` | Hook point for style interception |
-| `src/3rdparty/chromium/third_party/blink/renderer/core/css/computed_style.h` | ComputedStyle object to read/modify |
-| `src/3rdparty/chromium/third_party/blink/public/common/switches.cc` | CLI flag definition |
+1. **Unprotect style getters** - `BackgroundColor()`, `Color()`, and other getters in `ComputedStyleBuilderBase` are protected. Options:
+   - Make them public in `gen/third_party/blink/renderer/core/style/computed_style_base.h` (auto-generated, need to find generator)
+   - Add `ApplyElementShader` as a friend function to `ComputedStyleBuilder`
+   - Create a helper class that's already a friend (like `ColorPropertyFunctions`)
 
-## Resolved Questions
+2. **Preserve transparency** - Currently we overwrite all backgrounds including transparent ones. Need to read alpha before deciding to modify.
 
-| Question | Answer |
-|----------|--------|
-| What properties to modify? | `background-color`, `color`, gradients, pseudo-elements, hover states |
-| Per-element or zone-based? | Per-element (via ComputedStyle hook) |
-| How to configure? | CLI flags from Python config (`c.shader.background`, `c.shader.text`) |
-| Download Chromium separately? | No - QtWebEngine bundles Chromium |
+3. **Handle gradients** - `background-image` with gradients needs separate handling via `FillLayer`.
 
-## Open Questions
-
-1. What's the acceptable performance overhead per element?
-2. How do we handle the Qt/Chromium version upgrade cycle?
-3. Which specific transformation algorithm to start with? (Linear interpolation as first attempt)
+4. **CLI configuration** - Pass target colors from qutebrowser config via CLI flags (see `darkmode.py` for pattern).
 
 ---
 
-**Note for AI agents**: If you make changes that affect the accuracy of this document, please update it accordingly.
+**Note for AI agents**: This shader is confirmed working. Modify `ApplyElementShader()` to implement new color transformation logic. Always rebuild with `./install.sh --dirty` after changes. **IMPORTANT**: Modify this file if it it's outdated after any changes you make to the codebase.

@@ -29,6 +29,53 @@ qtwebengine                     qtwebengine-fork               Qutebrowser/
 
 **When someone clones your qutebrowser repo**, they get your fork with all your Blink modifications.
 
+## Nested Submodule Structure
+
+**Critical**: There are TWO levels of submodules:
+
+```
+Qutebrowser/                          ← main repo
+└── qtwebengine/                      ← submodule (your fork)
+    └── src/3rdparty/                 ← NESTED submodule (qtwebengine-chromium repo)
+        ├── chromium/                 ← regular folder
+        │   └── third_party/blink/... ← where Blink code lives
+        └── gn/
+```
+
+The Blink files you edit are inside `src/3rdparty/` which is itself a submodule (the `qtwebengine-chromium` repo).
+
+### Where git status shows changes
+
+| You run `git status` in... | You see... |
+|----------------------------|------------|
+| `Qutebrowser/` | `qtwebengine (modified content)` |
+| `qtwebengine/` | `src/3rdparty (modified content)` |
+| `qtwebengine/src/3rdparty/` | **Actual file changes** (e.g. `chromium/third_party/blink/...`) |
+
+### Committing Blink changes (3 levels)
+
+```bash
+# 1. Commit in src/3rdparty (where files actually are)
+cd qtwebengine/src/3rdparty
+git add .
+git commit -m "Add element shader"
+git push origin HEAD:main
+
+# 2. Commit in qtwebengine (update 3rdparty reference)
+cd ../..  # now in qtwebengine/
+git add src/3rdparty
+git commit -m "Update 3rdparty submodule"
+git push origin element-shader
+
+# 3. Commit in Qutebrowser (update qtwebengine reference)
+cd ..  # now in Qutebrowser/
+git add qtwebengine
+git commit -m "Update qtwebengine"
+git push
+```
+
+**Note**: The `src/3rdparty` submodule currently points to Qt's upstream repo (`qt/qtwebengine-chromium`). To push changes there, you'd need to fork `qtwebengine-chromium` too and update the URL in qtwebengine's `.gitmodules`.
+
 ## Mental Model
 
 ```
@@ -47,7 +94,7 @@ Qutebrowser/
 ├── qutebrowser/
 ├── install.sh
 └── qtwebengine/              ← NOW contains actual files from YOUR fork
-    └── src/3rdparty/chromium/
+    └── src/3rdparty/chromium/  ← NESTED submodule (qtwebengine-chromium)
         └── ...               ← Includes your committed changes!
 ```
 
