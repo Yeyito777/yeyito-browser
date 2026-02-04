@@ -27,6 +27,8 @@ This repo uses a **git submodule** (`qtwebengine/`) pointing to a custom fork of
 | `./install.sh` | Build (skips if commit unchanged) |
 | `./install.sh --dirty` | Force rebuild with uncommitted changes |
 | `~/.local/bin/qutebrowser` | Launch with custom QtWebEngine |
+| `./scripts/ladder-commit "msg"` | Commit through all 3 submodule levels |
+| `./scripts/ladder-commit "msg" --push` | Commit and push through all 3 levels |
 
 ### Workflow for Blink Changes (for the user, not the agent)
 
@@ -38,10 +40,8 @@ vim qtwebengine/src/3rdparty/chromium/...
 ./install.sh --dirty
 ~/.local/bin/qutebrowser
 
-# 3. Commit up the ladder (3 levels - user does this manually)
-cd qtwebengine/src/3rdparty && git add . && git commit -m "msg" && git push
-cd ../.. && git add src/3rdparty && git commit -m "Update chromium" && git push
-cd .. && git add qtwebengine && git commit -m "Update qtwebengine" && git push
+# 3. Commit up the ladder (all 3 submodule levels)
+./scripts/ladder-commit "Your commit message" --push
 ```
 
 ### Submodule Structure

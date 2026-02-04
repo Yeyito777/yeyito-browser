@@ -1,0 +1,78 @@
+#!/bin/bash
+# Commits changes through the nested submodule ladder
+# Usage: ladder-commit "commit message" [--push]
+
+set -e
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+MSG=""
+PUSH=false
+
+# Parse arguments
+for arg in "$@"; do
+    case $arg in
+        --push)
+            PUSH=true
+            ;;
+        *)
+            if [[ -z "$MSG" ]]; then
+                MSG="$arg"
+            fi
+            ;;
+    esac
+done
+
+if [[ -z "$MSG" ]]; then
+    echo "Usage: ladder-commit \"commit message\" [--push]"
+    exit 1
+fi
+
+echo "=== Level 1: qtwebengine-chromium (src/3rdparty) ==="
+cd "$ROOT/qtwebengine/src/3rdparty"
+if git diff --quiet && git diff --cached --quiet; then
+    echo "No changes to commit"
+else
+    git add -A
+    git commit -m "$MSG"
+    echo "Committed"
+fi
+
+if $PUSH; then
+    echo "Pushing..."
+    git push origin HEAD:main
+fi
+
+echo ""
+echo "=== Level 2: yeyitowebengine (qtwebengine) ==="
+cd "$ROOT/qtwebengine"
+if git diff --quiet src/3rdparty; then
+    echo "No submodule change to commit"
+else
+    git add src/3rdparty
+    git commit -m "Update chromium: $MSG"
+    echo "Committed"
+fi
+
+if $PUSH; then
+    echo "Pushing..."
+    git push origin main
+fi
+
+echo ""
+echo "=== Level 3: yeyito-browser (root) ==="
+cd "$ROOT"
+if git diff --quiet qtwebengine; then
+    echo "No submodule change to commit"
+else
+    git add qtwebengine
+    git commit -m "Update qtwebengine: $MSG"
+    echo "Committed"
+fi
+
+if $PUSH; then
+    echo "Pushing..."
+    git push
+fi
+
+echo ""
+echo "Done!"

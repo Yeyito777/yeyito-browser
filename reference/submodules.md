@@ -54,6 +54,20 @@ The Blink files you edit are inside `src/3rdparty/` which is itself a submodule 
 
 ### Committing Blink changes (3 levels)
 
+**Recommended: Use the helper script**
+
+```bash
+# Commit only
+./scripts/ladder-commit "Add element shader"
+
+# Commit and push
+./scripts/ladder-commit "Add element shader" --push
+```
+
+The script handles all 3 levels automatically, skips levels with no changes, and prefixes parent commits appropriately.
+
+**Manual method (if needed)**
+
 ```bash
 # 1. Commit in src/3rdparty (where files actually are)
 cd qtwebengine/src/3rdparty
@@ -170,25 +184,19 @@ qutebrowser
 # 3. Iterate until happy
 ```
 
-### Committing Your Changes (Two Steps)
+### Committing Your Changes
 
-When you're happy with your changes:
+When you're happy with your changes, use the ladder-commit script:
 
 ```bash
-# Step 1: Commit to your fork
-cd qtwebengine
-git add .
-git commit -m "Improve element shader color transformation"
-git push origin main
-cd ..
+# Commit only
+./scripts/ladder-commit "Improve element shader color transformation"
 
-# Step 2: Update submodule reference in main repo
-git add qtwebengine
-git commit -m "Update qtwebengine"
-git push
+# Commit and push
+./scripts/ladder-commit "Improve element shader color transformation" --push
 ```
 
-**Why two commits?** The submodule is a separate repo. You commit your code changes there, then update the "bookmark" in your main repo to point to the new commit.
+This handles all 3 submodule levels automatically. See "Committing Blink changes (3 levels)" above for details.
 
 ### What Git Status Shows
 
@@ -341,8 +349,8 @@ This syncs the submodule to the commit your main repo's bookmark points to.
 | Clone repo with submodules | `git clone --recurse-submodules <url>` |
 | Fetch submodule after clone | `git submodule update --init --recursive` |
 | See submodule status | `git submodule status` |
-| Commit Blink changes | `cd qtwebengine && git add . && git commit && git push && cd ..` |
-| Update main repo's reference | `git add qtwebengine && git commit && git push` |
+| Commit Blink changes (all levels) | `./scripts/ladder-commit "message"` |
+| Commit and push (all levels) | `./scripts/ladder-commit "message" --push` |
 | Update to new Qt version | `cd qtwebengine && git fetch upstream && git rebase upstream/v6.11.0 && git push --force-with-lease` |
 
 ---
