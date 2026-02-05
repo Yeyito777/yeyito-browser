@@ -41,7 +41,10 @@ StyleImage* CreateShaderGradient(float start_alpha, float end_alpha) {
 
 void ApplyElementShader(StyleResolverState& state) {
   ComputedStyleBuilder& builder = state.StyleBuilder();
-  // ... text color setup ...
+  // ... target colors and text color setup ...
+
+  // Options
+  const bool kPreserveBorderAlpha = false;  // Preserve original border alpha
 
   // Check for gradients in background layers and replace them
   FillLayer& bg_layers = builder.AccessBackgroundLayers();
@@ -268,7 +271,11 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 
 3. ~~**Handle gradients**~~ - DONE: Detects gradients via `FillLayer` and replaces them with custom linear gradient (#00050f to #090d35). Preserves alpha from original gradient's first/last stops.
 
-4. **CLI configuration** - Pass target colors from qutebrowser config via CLI flags (see `darkmode.py` for pattern).
+4. ~~**Border recoloring**~~ - DONE: Recolors all borders to #1d9bf0. Alpha preservation is optional via `kPreserveBorderAlpha` (currently disabled).
+
+5. ~~**Border radius removal**~~ - DONE: Sets border-radius to 0 on all elements.
+
+6. **CLI configuration** - Pass target colors from qutebrowser config via CLI flags (see `darkmode.py` for pattern).
 
 ---
 
