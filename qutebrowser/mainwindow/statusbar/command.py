@@ -280,6 +280,16 @@ class Command(misc.CommandLineEdit):
             else:
                 e.accept()
                 self.insert(text)
+        elif e.key() == Qt.Key.Key_V and e.modifiers() == (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+        ):
+            try:
+                text = utils.get_clipboard(selection=False)
+            except utils.ClipboardError:
+                e.ignore()
+            else:
+                e.accept()
+                self.insert(text)
         else:
             super().keyPressEvent(e)
 

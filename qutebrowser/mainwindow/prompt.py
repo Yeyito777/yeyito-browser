@@ -552,6 +552,17 @@ class LineEdit(QLineEdit):
                 e.accept()
                 self.insert(text)
             return
+        if e.key() == Qt.Key.Key_V and e.modifiers() == (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+        ):
+            try:
+                text = utils.get_clipboard(selection=False)
+            except utils.ClipboardError:  # pragma: no cover
+                e.ignore()
+            else:
+                e.accept()
+                self.insert(text)
+            return
         super().keyPressEvent(e)
 
     def __repr__(self):
