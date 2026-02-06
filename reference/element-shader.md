@@ -277,6 +277,42 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 
 6. **CLI configuration** - Pass target colors from qutebrowser config via CLI flags (see `darkmode.py` for pattern).
 
+7. ~~**Runtime toggle**~~ - DONE: `:shader-off` / `:shader-on` commands toggle the shader at runtime.
+
+## Runtime Toggle (shader-on / shader-off)
+
+The shader can be toggled at runtime via qutebrowser commands:
+
+- `:shader-off` — disables the shader on all open tabs and future pages
+- `:shader-on` — re-enables the shader on all open tabs and future pages
+- Calling the same command twice is a no-op (idempotent)
+
+### How it works
+
+**C++ side** (`style_resolver.cc`): `ApplyElementShader()` checks the document element for a `data-no-shader` attribute. If present, it returns early (skips all shader logic).
+
+```cpp
+Element* root = state.GetDocument().documentElement();
+if (root) {
+  DEFINE_STATIC_LOCAL(AtomicString, no_shader_attr, ("data-no-shader"));
+  if (root->hasAttribute(no_shader_attr)) {
+    return;
+  }
+}
+```
+
+**Python side** (`qutebrowser/components/shadercommands.py`):
+
+1. **Existing tabs**: Runs JavaScript on all open tabs to set/remove the `data-no-shader` attribute, plus injects a `<style>` element that toggles a CSS custom property (`--__shader_state`) to force Blink to do a full style recalculation.
+2. **New pages**: Installs/removes a profile-level `QWebEngineScript` (DocumentCreation injection point) that sets the attribute before styles are resolved.
+
+### Key files
+
+| File | Purpose |
+|------|---------|
+| `style_resolver.cc` (line ~195) | C++ attribute check in `ApplyElementShader()` |
+| `qutebrowser/components/shadercommands.py` | Python commands and JS injection |
+
 ---
 
 **Note for AI agents**: This shader is confirmed working. Modify `ApplyElementShader()` to implement new color transformation logic. Always rebuild with `./install.sh --dirty` after changes. **IMPORTANT**: Modify this file if it it's outdated after any changes you make to the codebase.

@@ -3,6 +3,8 @@ You're in my fork of qutebrowser's source. This fork includes a custom build of 
 
 **Important**: Do NOT run git commands (commit, push, checkout, etc.) unless explicitly instructed by the user. This includes the qtwebengine submodule. The user manages git operations manually to avoid confusion about which commit they're on.
 
+**Important**: After editing Blink/QtWebEngine C++ files, always run `./install.sh --dirty` to build and install. Don't wait for the user to ask.
+
 ## Reference Files - Read These First
 
 | When user mentions... | Read this first |
