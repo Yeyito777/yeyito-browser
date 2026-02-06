@@ -9,84 +9,88 @@ The element shader intercepts Blink's style resolution to transform CSS properti
 The shader function lives in the anonymous namespace at the top of the file (after includes, inside `namespace blink { namespace {`):
 
 ```cpp
-// Line ~148
+// Line ~150
 // =============================================================================
 // ELEMENT SHADER - Transforms computed styles before rendering
 // =============================================================================
 
 // Helper: create gradient with alpha from original gradient's first/last stops
-StyleImage* CreateShaderGradient(float start_alpha, float end_alpha) {
-  Color start_color(0x00, 0x05, 0x0f);
-  Color end_color(0x09, 0x0d, 0x35);
-  start_color.SetAlpha(start_alpha);
-  end_color.SetAlpha(end_alpha);
-
-  auto* gradient = MakeGarbageCollected<cssvalue::CSSLinearGradientValue>(
-      nullptr, nullptr, nullptr, nullptr, nullptr,
-      cssvalue::kNonRepeating, cssvalue::kCSSLinearGradient);
-
-  cssvalue::CSSGradientColorStop stop1;
-  stop1.color_ = cssvalue::CSSColor::Create(start_color);
-  stop1.offset_ = CSSNumericLiteralValue::Create(0, CSSPrimitiveValue::UnitType::kPercentage);
-  gradient->AddStop(stop1);
-
-  cssvalue::CSSGradientColorStop stop2;
-  stop2.color_ = cssvalue::CSSColor::Create(end_color);
-  stop2.offset_ = CSSNumericLiteralValue::Create(100, CSSPrimitiveValue::UnitType::kPercentage);
-  gradient->AddStop(stop2);
-
-  return MakeGarbageCollected<StyleGeneratedImage>(
-      *gradient, CSSToLengthConversionData::ContainerSizes());
-}
+StyleImage* CreateShaderGradient(float start_alpha, float end_alpha) { ... }
 
 void ApplyElementShader(StyleResolverState& state) {
-  ComputedStyleBuilder& builder = state.StyleBuilder();
-  // ... target colors and text color setup ...
+  // 1. Check if shader is disabled via data-no-shader attribute
+  // 2. Set up target colors: bg=#00050f, text=#ffffff, border=#1d9bf0
 
-  // Options
-  const bool kPreserveBorderAlpha = false;  // Preserve original border alpha
+  // --- Text color: chromatic preservation ---
+  // Reads original text color, computes chroma (max-min of RGB channels).
+  // If chroma > 25: boost via HSL (lightness >= 0.70, saturation >= 0.70)
+  // Otherwise: set to #ffffff
+  bool used_chromatic = false;
+  OptionalStyleColor text_opt = ColorPropertyFunctions::GetUnvisitedColor(
+      GetCSSPropertyColor(), builder);
+  if (text_opt.has_value() && !text_opt.value().IsCurrentColor()) {
+    Color orig = text_opt.value().GetColor();
+    int chroma = std::max({orig.Red(), orig.Green(), orig.Blue()})
+               - std::min({orig.Red(), orig.Green(), orig.Blue()});
+    if (chroma > 25) {
+      double h, s, l;
+      orig.GetHSL(h, s, l);       // All 0-1 range
+      l = std::max(l, 0.70);      // Lightness floor
+      s = std::max(s, 0.70);      // Saturation floor
+      Color boosted = Color::FromHSLA(
+          static_cast<float>(h) * 360.0f,  // FromHSLA wants degrees
+          static_cast<float>(s),            // 0-1 range
+          static_cast<float>(l),            // 0-1 range
+          orig.Alpha());
+      // Set on all text color properties
+      used_chromatic = true;
+    }
+  }
+  if (!used_chromatic) { /* set all text colors to #ffffff */ }
 
-  // Check for gradients in background layers and replace them
-  FillLayer& bg_layers = builder.AccessBackgroundLayers();
-  for (FillLayer* layer = &bg_layers; layer; layer = layer->Next()) {
-    StyleImage* image = layer->GetImage();
-    if (image && image->IsGeneratedImage()) {
-      const auto* generated = DynamicTo<StyleGeneratedImage>(image);
-      if (generated) {
-        const CSSValue* css_value = generated->CssValue();
-        if (css_value && css_value->IsGradientValue()) {
-          // Extract alpha from original gradient
-          float start_alpha = 1.0f, end_alpha = 1.0f;
-          const auto* gradient_value = DynamicTo<cssvalue::CSSGradientValue>(css_value);
-          if (gradient_value && gradient_value->StopCount() > 0 && state.ParentStyle()) {
-            Vector<Color> stop_colors = gradient_value->GetStopColors(
-                state.GetDocument(), *state.ParentStyle());
-            if (!stop_colors.empty()) {
-              start_alpha = stop_colors.front().Alpha();
-              end_alpha = stop_colors.back().Alpha();
-            }
-          }
-          layer->SetImage(CreateShaderGradient(start_alpha, end_alpha));
-        }
-      }
+  // --- Border recoloring (unchanged) ---
+  // --- Border radius removal (unchanged) ---
+  // --- Gradient replacement (unchanged) ---
+
+  // --- Background color: chromatic preservation with area gating ---
+  // Large elements always get #00050f (no chromatic preservation):
+  //   - <html> and <body> elements
+  //   - Elements with layout area > kMaxChromaticBgArea (200000 px², ~450x450)
+  const float kMaxChromaticBgArea = 200000.0f;
+  bool force_dark = false;
+
+  Element& element = state.GetElement();
+  if (IsA<HTMLHtmlElement>(element) || IsA<HTMLBodyElement>(element)) {
+    force_dark = true;
+  }
+  if (!force_dark) {
+    LayoutObject* layout_obj = element.GetLayoutObject();
+    if (layout_obj && layout_obj->IsBox()) {
+      auto* layout_box = To<LayoutBox>(layout_obj);
+      float w = layout_box->OffsetWidth().ToFloat();
+      float h = layout_box->OffsetHeight().ToFloat();
+      if (w * h > kMaxChromaticBgArea) force_dark = true;
     }
   }
 
-  // ... background color handling ...
-  if (bg_style_color.IsCurrentColor()) {
-    return;
+  // If small + chromatic (chroma > 25): darken via HSL (lightness <= 0.15, saturation >= 0.50)
+  // Otherwise: #00050f + original alpha
+  if (!force_dark && bg_chroma > 25) {
+    double h, s, l;
+    bg_color.GetHSL(h, s, l);
+    l = std::min(l, 0.15);
+    s = std::max(s, 0.50);
+    Color darkened = Color::FromHSLA(
+        static_cast<float>(h) * 360.0f,
+        static_cast<float>(s),
+        static_cast<float>(l),
+        bg_color.Alpha());  // Alpha preserved
+    builder.SetBackgroundColor(StyleColor(darkened));
+  } else {
+    Color target_with_alpha(0x00, 0x05, 0x0f);
+    target_with_alpha.SetAlpha(bg_color.Alpha());
+    builder.SetBackgroundColor(StyleColor(target_with_alpha));
   }
-
-  // Get the actual color value
-  Color bg_color = bg_style_color.GetColor();
-
-  // Skip background modification if fully transparent
-  if (bg_color.IsFullyTransparent()) {
-    return;
-  }
-
-  // Background is not transparent, apply our target color
-  builder.SetBackgroundColor(StyleColor(kTargetBackground));
 }
 // =============================================================================
 ```
@@ -165,6 +169,26 @@ StyleColor style_color(color);
 builder.SetBackgroundColor(style_color);
 ```
 
+### HSL Color Manipulation
+
+```cpp
+// GetHSL returns all values in 0.0-1.0 range
+double h, s, l;
+color.GetHSL(h, s, l);
+
+// FromHSLA takes: hue in degrees (0-360), s/l in 0-1, alpha in 0-1
+Color result = Color::FromHSLA(
+    static_cast<float>(h) * 360.0f,  // convert 0-1 → degrees
+    static_cast<float>(s),
+    static_cast<float>(l),
+    color.Alpha());
+
+// Chroma detection (distinguishes chromatic from gray/white/black)
+int chroma = std::max({color.Red(), color.Green(), color.Blue()})
+           - std::min({color.Red(), color.Green(), color.Blue()});
+// chroma > 25 means "has real color" (white=0, black=0, #333=0, #cc3333=153)
+```
+
 ### Accessing Element Info
 
 ```cpp
@@ -176,6 +200,14 @@ if (IsA<HTMLBodyElement>(element)) { ... }
 
 // Get document
 Document& doc = state.GetDocument();
+
+// Get layout dimensions (available on restyle, nullptr on first paint)
+LayoutObject* layout_obj = element.GetLayoutObject();
+if (layout_obj && layout_obj->IsBox()) {
+  auto* layout_box = To<LayoutBox>(layout_obj);
+  float w = layout_box->OffsetWidth().ToFloat();
+  float h = layout_box->OffsetHeight().ToFloat();
+}
 ```
 
 ## Build & Test
@@ -201,7 +233,8 @@ vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolv
 | `computed_style_base.h` | Auto-generated base with getters/setters |
 | `color_property_functions.h` | `ColorPropertyFunctions` for reading color properties |
 | `longhands.h` | `GetCSSPropertyBackgroundColor()` and other property accessors |
-| `platform/graphics/color.h` | `Color` class with `IsFullyTransparent()` |
+| `platform/graphics/color.h` | `Color` class with `IsFullyTransparent()`, `GetHSL()`, `FromHSLA()` |
+| `layout/layout_box.h` | `LayoutBox` for element dimensions (`OffsetWidth()`, `OffsetHeight()`) |
 | `css_gradient_value.h` | `CSSLinearGradientValue`, `CSSGradientColorStop` for gradients |
 | `css_color.h` | `CSSColor::Create()` for gradient color stops |
 | `css_numeric_literal_value.h` | `CSSNumericLiteralValue::Create()` for percentages |
@@ -278,6 +311,10 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 6. **CLI configuration** - Pass target colors from qutebrowser config via CLI flags (see `darkmode.py` for pattern).
 
 7. ~~**Runtime toggle**~~ - DONE: `:shader-off` / `:shader-on` commands toggle the shader at runtime.
+
+8. ~~**Chromatic text preservation**~~ - DONE: Detects chromatic text (chroma > 25) and boosts via HSL (lightness floor 0.70, saturation floor 0.70) instead of forcing white. Non-chromatic text stays #ffffff.
+
+9. ~~**Chromatic background preservation**~~ - DONE: Small chromatic elements get darkened backgrounds (HSL lightness cap 0.15, saturation floor 0.50) instead of flat #00050f. Large elements (html/body or layout area > 200k px²) are forced to #00050f. Alpha always preserved.
 
 ## Runtime Toggle (shader-on / shader-off)
 
