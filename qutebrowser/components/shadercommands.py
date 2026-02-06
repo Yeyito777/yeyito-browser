@@ -121,6 +121,15 @@ def shader_on() -> None:
     _do_shader_on()
 
 
+@cmdutils.register(name='shader-toggle')
+def shader_toggle() -> None:
+    """Toggle the element shader on or off."""
+    if _shader_enabled:
+        _do_shader_off()
+    else:
+        _do_shader_on()
+
+
 @cmdutils.register(name='shader-reload')
 def shader_reload() -> None:
     """Reload the element shader (off then on)."""
