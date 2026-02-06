@@ -9,7 +9,6 @@
 - Body / app body in pages like youtube do not get shown through selectables so if we're scrolling in another element it's a pain to refocus the main scroll.
 
 # Improvements
-- Add a way to click outside of images once you've focused them
 - zz centers selection on caret mode and highlight mode (/ and ?)
 - Overhaul UIs like the crash report and the download so that they follow my terminal theme (Also make it so that it doesn't email the dude lol)
 - Use TamperMonkey instead of GreaseMonkey or something that would help get vencord in discord
