@@ -52,6 +52,7 @@ void ApplyElementShader(StyleResolverState& state) {
   // --- Border recoloring (unchanged) ---
   // --- Border radius removal (unchanged) ---
   // --- Gradient replacement (unchanged) ---
+  // --- Drop shadow recoloring: #090d35, alpha preserved ---
 
   // --- Background color: chromatic preservation with area gating ---
   // Large elements always get #00050f (no chromatic preservation):
@@ -364,6 +365,8 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 9. ~~**Chromatic background preservation**~~ - DONE: Small chromatic elements get darkened backgrounds (HSL lightness cap 0.15, saturation floor 0.50) instead of flat #00050f. Large elements (html/body or layout area > 200k px²) are forced to #00050f. Alpha always preserved.
 
 10. ~~**Scrollbar theming**~~ - DONE: Two-layer approach: CSS overrides for `::-webkit-scrollbar-*` pseudo-elements, plus native theme paint overrides in `NativeThemeAura` and `NativeThemeFluent` for all other scrollbars. Theme: `#00050f` background, `#1d9bf0` 1px border, 0 radius.
+
+11. ~~**Drop shadow recoloring**~~ - DONE: Reads `BoxShadow()` from the style builder, recolors each shadow entry to `#090d35` while preserving original alpha and opacity. Shadow geometry (offsets, blur, spread, inset) is untouched.
 
 ## Runtime Toggle (shader-on / shader-off)
 
