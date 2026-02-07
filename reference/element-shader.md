@@ -19,7 +19,8 @@ StyleImage* CreateShaderGradient(float start_alpha, float end_alpha) { ... }
 
 void ApplyElementShader(StyleResolverState& state) {
   // 1. Check if shader is disabled via data-no-shader attribute
-  // 2. Set up target colors: bg=#00050f, text=#ffffff, border=#1d9bf0
+  // 2. Handle ::selection pseudo — set bg to #4f5258, return early
+  // 3. Set up target colors: bg=#00050f, text=#ffffff, border=#1d9bf0
 
   // --- Text color: chromatic preservation ---
   // Reads original text color, computes chroma (max-min of RGB channels).
@@ -108,6 +109,50 @@ The shader is called in `StyleResolver::ResolveStyle()` right before the style i
   return state.TakeStyle();
 }
 ```
+
+## Scrollbar Theming
+
+Scrollbars are themed via **two separate mechanisms** to achieve full coverage:
+
+### 1. CSS Custom Scrollbars (`::-webkit-scrollbar-*`)
+
+Pages that use `::-webkit-scrollbar` CSS get their scrollbars styled through Blink pseudo-elements. These are handled via a CSS override file injected by qutebrowser:
+
+**File:** `~/.config/qutebrowser/cssoverrides/default.css`
+
+```css
+::-webkit-scrollbar { background: #00050f !important; }
+::-webkit-scrollbar-thumb {
+  background: #00050f !important;
+  border: 1px solid #1d9bf0 !important;
+  border-radius: 0 !important;
+}
+::-webkit-scrollbar-track { background: #00050f !important; border-radius: 0 !important; }
+::-webkit-scrollbar-track-piece { background: #00050f !important; border-radius: 0 !important; }
+::-webkit-scrollbar-corner { background: #00050f !important; }
+::-webkit-scrollbar-button { background: #00050f !important; border-radius: 0 !important; }
+```
+
+### 2. Native Scrollbars (NativeTheme paint overrides)
+
+The majority of scrollbars (including DevTools) are painted by the native theme engine, bypassing CSS entirely. These are themed by modifying the paint methods directly:
+
+**Files:**
+- `ui/native_theme/native_theme_aura.cc` — Aura scrollbars (standard + overlay)
+- `ui/native_theme/native_theme_fluent.cc` — Fluent scrollbars
+
+**Modified methods** (in both files):
+
+| Method | Change |
+|--------|--------|
+| `PaintScrollbarTrack` | Fill with `#00050f` |
+| `PaintScrollbarThumb` | Fill `#00050f` + 1px `#1d9bf0` stroke border, 0 radius |
+| `PaintScrollbarCorner` | Fill with `#00050f` |
+| `PaintArrowButton` | Background `#00050f`, arrow color `#1d9bf0`, 0 radius |
+
+**Why two mechanisms?** Chromium has two completely separate scrollbar rendering paths:
+- **CSS custom scrollbars**: Only active when a page declares `::-webkit-scrollbar` rules. Rendered as pseudo-elements through Blink's style resolver. Rare.
+- **Native scrollbars**: The default for most pages. Painted directly by `NativeThemeAura`/`NativeThemeFluent` via Skia canvas calls, completely bypassing CSS. This includes DevTools, most web pages, and all internal Chrome UI.
 
 ## Available APIs
 
@@ -240,6 +285,8 @@ vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolv
 | `css_numeric_literal_value.h` | `CSSNumericLiteralValue::Create()` for percentages |
 | `style_generated_image.h` | `StyleGeneratedImage` wrapper for gradients |
 | `fill_layer.h` | `FillLayer` for accessing background-image layers |
+| `ui/native_theme/native_theme_aura.cc` | Native scrollbar painting (Aura/overlay) |
+| `ui/native_theme/native_theme_fluent.cc` | Native scrollbar painting (Fluent) |
 
 ## Gradient Handling
 
@@ -315,6 +362,8 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 8. ~~**Chromatic text preservation**~~ - DONE: Detects chromatic text (chroma > 25) and boosts via HSL (lightness floor 0.70, saturation floor 0.70) instead of forcing white. Non-chromatic text stays #ffffff.
 
 9. ~~**Chromatic background preservation**~~ - DONE: Small chromatic elements get darkened backgrounds (HSL lightness cap 0.15, saturation floor 0.50) instead of flat #00050f. Large elements (html/body or layout area > 200k px²) are forced to #00050f. Alpha always preserved.
+
+10. ~~**Scrollbar theming**~~ - DONE: Two-layer approach: CSS overrides for `::-webkit-scrollbar-*` pseudo-elements, plus native theme paint overrides in `NativeThemeAura` and `NativeThemeFluent` for all other scrollbars. Theme: `#00050f` background, `#1d9bf0` 1px border, 0 radius.
 
 ## Runtime Toggle (shader-on / shader-off)
 
