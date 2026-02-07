@@ -347,7 +347,7 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 
 1. ~~**Unprotect style getters**~~ - SOLVED: Using `ColorPropertyFunctions::GetUnvisitedColor()` which is already a friend class.
 
-2. ~~**Preserve transparency**~~ - DONE: Now checks `IsFullyTransparent()` before modifying background.
+2. ~~**Preserve transparency**~~ - DONE: All elements are processed through the shader pipeline; alpha is always preserved from the original background, so transparent elements naturally stay transparent.
 
 3. ~~**Handle gradients**~~ - DONE: Detects gradients via `FillLayer` and replaces them with custom linear gradient (#00050f to #090d35). Preserves alpha from original gradient's first/last stops.
 
