@@ -777,6 +777,33 @@ class CommandDispatcher:
                               maybe=True)
 
     @cmdutils.register(instance='command-dispatcher', scope='window')
+    def yank_dom(self, sel=False, quiet=False):
+        """Yank the current page's DOM to the clipboard or primary selection.
+
+        Args:
+            sel: Use the primary selection instead of the clipboard.
+            quiet: Don't show an information message.
+        """
+        tab = self._current_widget()
+
+        def _on_html(html):
+            if sel and utils.supports_selection():
+                target = "primary selection"
+            else:
+                utils.set_clipboard(html, selection=False)
+                target = "clipboard"
+                if not quiet:
+                    message.info("Yanked DOM ({} chars) to {}".format(
+                        len(html), target))
+                return
+            utils.set_clipboard(html, selection=True)
+            if not quiet:
+                message.info("Yanked DOM ({} chars) to {}".format(
+                    len(html), target))
+
+        tab.dump_async(_on_html)
+
+    @cmdutils.register(instance='command-dispatcher', scope='window')
     @cmdutils.argument('pinned', choices=['prompt', 'close', 'keep'], flag='P',
                        metavar='behavior')
     @cmdutils.argument('force', hide=True)
