@@ -358,7 +358,7 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 
 6. **CLI configuration** - Pass target colors from qutebrowser config via CLI flags (see `darkmode.py` for pattern).
 
-7. ~~**Runtime toggle**~~ - DONE: `:shader-off` / `:shader-on` commands toggle the shader at runtime.
+7. **Runtime toggle** - BLOCKED: C++ settings pipeline works, but stock PyQt6-WebEngine bindings silently swallow the custom `ElementShaderEnabled` enum value at the SIP marshalling layer. Requires building custom PyQt6-WebEngine bindings (see #12).
 
 8. ~~**Chromatic text preservation**~~ - DONE: Detects chromatic text (chroma > 25) and boosts via HSL (lightness floor 0.70, saturation floor 0.70) instead of forcing white. Non-chromatic text stays #ffffff.
 
@@ -368,39 +368,53 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 
 11. ~~**Drop shadow recoloring**~~ - DONE: Reads `BoxShadow()` from the style builder, recolors each shadow entry to `#090d35` while preserving original alpha and opacity. Shadow geometry (offsets, blur, spread, inset) is untouched.
 
+12. **Build custom PyQt6-WebEngine bindings** - The stock PyQt6-WebEngine package (from pip) was compiled against upstream Qt headers and doesn't know about our custom C++ API additions (e.g., `ElementShaderEnabled`). The `LD_LIBRARY_PATH` trick only swaps the C++ shared library at runtime — the Python↔C++ bridge (SIP bindings) remains stock and silently drops unknown enum values. Fix: build PyQt6-WebEngine from source against our custom Qt headers so the SIP bindings include our enum values. Unblocks #7 (runtime toggle) and any future custom `QWebEngineSettings` attributes.
+
 ## Runtime Toggle (shader-on / shader-off)
 
 The shader can be toggled at runtime via qutebrowser commands:
 
 - `:shader-off` — disables the shader on all open tabs and future pages
 - `:shader-on` — re-enables the shader on all open tabs and future pages
-- Calling the same command twice is a no-op (idempotent)
+- `:shader-toggle` — toggles between on/off
+- `:shader-reload` — cycles off then on (forces full re-apply)
+- Calling `:shader-off` / `:shader-on` when already in that state is a no-op (idempotent)
 
 ### How it works
 
-**C++ side** (`style_resolver.cc`): `ApplyElementShader()` checks the document element for a `data-no-shader` attribute. If present, it returns early (skips all shader logic).
+Uses the native **QWebEngineSettings → WebPreferences → Blink Settings** pipeline. No JavaScript injection or DOM attributes needed.
+
+**C++ side** (`style_resolver.cc`): `ApplyElementShader()` reads the `elementShaderEnabled` setting from the document's `Settings` object:
 
 ```cpp
-Element* root = state.GetDocument().documentElement();
-if (root) {
-  DEFINE_STATIC_LOCAL(AtomicString, no_shader_attr, ("data-no-shader"));
-  if (root->hasAttribute(no_shader_attr)) {
-    return;
-  }
+const Settings* settings = state.GetDocument().GetSettings();
+if (!settings || !settings->GetElementShaderEnabled()) {
+  return;
 }
 ```
 
-**Python side** (`qutebrowser/components/shadercommands.py`):
+**Settings pipeline** (6 files carry the boolean from Python to Blink):
 
-1. **Existing tabs**: Runs JavaScript on all open tabs to set/remove the `data-no-shader` attribute, plus injects a `<style>` element that toggles a CSS custom property (`--__shader_state`) to force Blink to do a full style recalculation.
-2. **New pages**: Installs/removes a profile-level `QWebEngineScript` (DocumentCreation injection point) that sets the attribute before styles are resolved.
+| Layer | File | What |
+|-------|------|------|
+| Qt API | `qwebenginesettings.h` | `ElementShaderEnabled` enum value |
+| Qt internal | `web_engine_settings.cpp` | Default `true`, maps to `WebPreferences` |
+| Bridge struct | `web_preferences.h` | `bool element_shader_enabled = true` |
+| Apply mapping | `web_view_impl.cc` | `SetElementShaderEnabled(prefs.element_shader_enabled)` |
+| Blink schema | `settings.json5` | `elementShaderEnabled`, invalidates Style + Paint |
+| Style resolver | `style_resolver.cc` | `GetElementShaderEnabled()` check |
+
+**Python side** (`qutebrowser/components/shadercommands.py`): Toggles the setting on all profiles via `QWebEngineSettings.setAttribute()`. The settings pipeline automatically propagates to all existing tabs, new tabs, and page refreshes.
+
+**BLOCKER**: The runtime toggle currently does NOT work. The stock PyQt6-WebEngine bindings (from pip) don't know about our custom `ElementShaderEnabled` enum value — accessing it raises `AttributeError`, and passing the raw integer (38) gets silently swallowed by the SIP marshalling layer before reaching our C++ code. The fix is to build custom PyQt6-WebEngine bindings against our modified Qt headers. See TODO item 12.
 
 ### Key files
 
 | File | Purpose |
 |------|---------|
-| `style_resolver.cc` (line ~195) | C++ attribute check in `ApplyElementShader()` |
-| `qutebrowser/components/shadercommands.py` | Python commands and JS injection |
+| `style_resolver.cc` (line ~198) | C++ Settings check in `ApplyElementShader()` |
+| `qutebrowser/components/shadercommands.py` | Python commands via `QWebEngineSettings` |
+| `qwebenginesettings.h` | C++ enum definition — `ElementShaderEnabled = 38` |
 
 ---
 
