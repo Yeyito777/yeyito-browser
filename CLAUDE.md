@@ -15,7 +15,7 @@ You're in my fork of qutebrowser's source. This fork includes a custom build of 
 | **bindings**, SIP, PyQt6-WebEngine, enum, WebAttribute | `reference/build.md` (Phase 4) |
 | **new setting**, WebAttribute, mojom, IPC, preferences | `reference/adding-a-web-setting.md` |
 | **dependencies**, packages, pacman, system updates, upstream sync | `reference/dependencies.md` |
-| **PDF**, PDF.js, polyfill, "is not a function" | `reference/pdfjs-polyfills.md` |
+| **pdf.js patching**, PDF.js, polyfill, "is not a function" | `reference/pdfjs-polyfills.md` |
 
 ## Custom QtWebEngine Build
 
