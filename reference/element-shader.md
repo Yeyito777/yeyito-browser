@@ -25,7 +25,7 @@ void ApplyElementShader(StyleResolverState& state) {
   // --- Text color: chromatic preservation ---
   // Reads original text color, computes chroma (max-min of RGB channels).
   // If chroma > 25: boost via HSL (lightness >= 0.70, saturation >= 0.70)
-  // Otherwise: set to #ffffff
+  // Otherwise: set to #ffffff, alpha preserved
   bool used_chromatic = false;
   OptionalStyleColor text_opt = ColorPropertyFunctions::GetUnvisitedColor(
       GetCSSPropertyColor(), builder);
@@ -47,7 +47,7 @@ void ApplyElementShader(StyleResolverState& state) {
       used_chromatic = true;
     }
   }
-  if (!used_chromatic) { /* set all text colors to #ffffff */ }
+  if (!used_chromatic) { /* set all text colors to #ffffff + original alpha */ }
 
   // --- Border recoloring (unchanged) ---
   // --- Border radius removal (unchanged) ---
