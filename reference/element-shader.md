@@ -398,8 +398,8 @@ if (!settings || !settings->GetElementShaderEnabled()) {
 | Layer | File | What |
 |-------|------|------|
 | Qt API | `qwebenginesettings.h` | `ElementShaderEnabled` enum value |
-| Qt internal | `web_engine_settings.cpp` | Default `true`, maps to `WebPreferences` |
-| Bridge struct | `web_preferences.h` | `bool element_shader_enabled = true` |
+| Qt internal | `web_engine_settings.cpp` | Default `false`, maps to `WebPreferences` |
+| Bridge struct | `web_preferences.h` | `bool element_shader_enabled = false` |
 | Mojom IPC def | `web_preferences.mojom` | Wire format field for browser→renderer IPC |
 | Mojom serialize | `web_preferences_mojom_traits.h` | Getter for serialization |
 | Mojom deserialize | `web_preferences_mojom_traits.cc` | Reads field from IPC message |
@@ -409,7 +409,9 @@ if (!settings || !settings->GetElementShaderEnabled()) {
 
 **Critical**: The mojom IPC layer (3 files) is required because Chromium is multi-process. The browser process sets WebPreferences, but the renderer process (Blink) consumes them. Without the mojom serialization, the value never crosses the process boundary.
 
-**Python side** (`qutebrowser/components/shadercommands.py`): Toggles the setting on all profiles via `QWebEngineSettings.setAttribute()`. The settings pipeline automatically propagates to all existing tabs, new tabs, and page refreshes.
+**Config option** (`content.element_shader`): Boolean, default `false`. Set `c.content.element_shader = True` in `config.py` to enable the shader on startup. The config is wired through `webenginesettings.py` to `QWebEngineSettings.setAttribute()`, which propagates through the full pipeline.
+
+**Python side** (`qutebrowser/components/shadercommands.py`): Toggles the setting on all profiles via `QWebEngineSettings.setAttribute()`. The settings pipeline automatically propagates to all existing tabs, new tabs, and page refreshes. The `:shader-*` commands override the config value at runtime; on restart, the config value takes effect again.
 
 **Status**: Fully operational. Custom PyQt6-WebEngine bindings (built from the `pyqt6-webengine/` submodule) include the `ElementShaderEnabled` enum value. Mojom IPC serialization carries the value from the browser process to the renderer process. `QWebEngineSettings.WebAttribute.ElementShaderEnabled` is accessible from Python and correctly marshals to C++ value 38, propagating through to Blink's `Settings::GetElementShaderEnabled()`.
 

@@ -163,6 +163,9 @@ class WebEngineSettings(websettings.AbstractSettings):
             # Added in QtWebEngine 6.7
             pass
 
+        _ATTRIBUTES['content.element_shader'] = Attr(
+            QWebEngineSettings.WebAttribute.ElementShaderEnabled)
+
     _FONT_SIZES = {
         'fonts.web.size.minimum':
             QWebEngineSettings.FontSize.MinimumFontSize,

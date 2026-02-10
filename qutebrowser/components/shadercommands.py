@@ -5,10 +5,19 @@
 """Element shader on/off commands."""
 
 from qutebrowser.api import cmdutils
+from qutebrowser.config import config
 
 
-# Shader is on by default (matches C++ Settings initial value)
-_shader_enabled = True
+# Tracks runtime state; initialized from config on first use
+_shader_enabled: bool | None = None
+
+
+def _get_shader_enabled():
+    """Get the current shader state, initializing from config if needed."""
+    global _shader_enabled
+    if _shader_enabled is None:
+        _shader_enabled = config.val.content.element_shader
+    return _shader_enabled
 
 
 def _get_profiles():
@@ -50,7 +59,7 @@ def _do_shader_on():
 @cmdutils.register(name='shader-off')
 def shader_off() -> None:
     """Turn off the element shader."""
-    if not _shader_enabled:
+    if not _get_shader_enabled():
         return
     _do_shader_off()
 
@@ -58,7 +67,7 @@ def shader_off() -> None:
 @cmdutils.register(name='shader-on')
 def shader_on() -> None:
     """Turn on the element shader."""
-    if _shader_enabled:
+    if _get_shader_enabled():
         return
     _do_shader_on()
 
@@ -66,7 +75,7 @@ def shader_on() -> None:
 @cmdutils.register(name='shader-toggle')
 def shader_toggle() -> None:
     """Toggle the element shader on or off."""
-    if _shader_enabled:
+    if _get_shader_enabled():
         _do_shader_off()
     else:
         _do_shader_on()

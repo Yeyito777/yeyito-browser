@@ -95,7 +95,7 @@ Sets the default value when no page or user code has called `setAttribute()`. Se
 
 ```cpp
         s_defaultAttributes.insert(QWebEngineSettings::BackForwardCacheEnabled, false);
-        s_defaultAttributes.insert(QWebEngineSettings::ElementShaderEnabled, true);  ← add here
+        s_defaultAttributes.insert(QWebEngineSettings::ElementShaderEnabled, false);  ← add here
 ```
 
 ### [4] Qt to WebPreferences Mapping
@@ -121,7 +121,7 @@ The C++ struct that holds all preferences. This is the "data bag" that gets seri
   bool force_dark_mode_enabled = false;
 
   // Enable the element shader (custom style transforms in style resolution).
-  bool element_shader_enabled = true;    ← add here (with default value)
+  bool element_shader_enabled = false;    ← add here (with default value)
 ```
 
 **Rule:** The default value here should match what you set in step [3]. This default is used if the mojom message doesn't include the field (backwards compatibility).
@@ -201,7 +201,7 @@ Defines the setting in Blink's internal settings system. This auto-generates the
     //
     {
       name: "elementShaderEnabled",      ← camelCase name
-      initial: true,                     ← default value in Blink
+      initial: false,                     ← default value in Blink
       invalidate: ["Style", "Paint"],    ← what to invalidate on change
     },
 ```

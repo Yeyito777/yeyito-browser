@@ -932,6 +932,14 @@ content.hyperlink_auditing:
   supports_pattern: true
   desc: Enable hyperlink auditing (`<a ping>`).
 
+content.element_shader:
+  default: false
+  type: Bool
+  desc: >-
+    Apply the element shader to web pages, transforming colors for a custom
+    dark theme. Can be toggled at runtime with :shader-on, :shader-off and
+    :shader-toggle.
+
 content.images:
   default: true
   type: Bool
