@@ -358,7 +358,7 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 
 6. **CLI configuration** - Pass target colors from qutebrowser config via CLI flags (see `darkmode.py` for pattern).
 
-7. **Runtime toggle** - BLOCKED: C++ settings pipeline works, but stock PyQt6-WebEngine bindings silently swallow the custom `ElementShaderEnabled` enum value at the SIP marshalling layer. Requires building custom PyQt6-WebEngine bindings (see #12).
+7. ~~**Runtime toggle**~~ - DONE: Full pipeline operational. Custom PyQt6-WebEngine bindings include `ElementShaderEnabled` enum. Mojom IPC serialization carries the setting from browser→renderer process. The C++ settings pipeline, Python bindings, and IPC layer are all aligned. Needs debug print cleanup (SHADER-DEBUG-* in 4 files).
 
 8. ~~**Chromatic text preservation**~~ - DONE: Detects chromatic text (chroma > 25) and boosts via HSL (lightness floor 0.70, saturation floor 0.70) instead of forcing white. Non-chromatic text stays #ffffff.
 
@@ -368,7 +368,7 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 
 11. ~~**Drop shadow recoloring**~~ - DONE: Reads `BoxShadow()` from the style builder, recolors each shadow entry to `#090d35` while preserving original alpha and opacity. Shadow geometry (offsets, blur, spread, inset) is untouched.
 
-12. **Build custom PyQt6-WebEngine bindings** - The stock PyQt6-WebEngine package (from pip) was compiled against upstream Qt headers and doesn't know about our custom C++ API additions (e.g., `ElementShaderEnabled`). The `LD_LIBRARY_PATH` trick only swaps the C++ shared library at runtime — the Python↔C++ bridge (SIP bindings) remains stock and silently drops unknown enum values. Fix: build PyQt6-WebEngine from source against our custom Qt headers so the SIP bindings include our enum values. Unblocks #7 (runtime toggle) and any future custom `QWebEngineSettings` attributes.
+12. ~~**Build custom PyQt6-WebEngine bindings**~~ - DONE: PyQt6-WebEngine source is forked as a submodule (`pyqt6-webengine/`), with `ElementShaderEnabled` added to `qwebenginesettings.sip`. Phase 4 of `install.sh` builds and installs the custom bindings using `sip-install` against our custom Qt headers. The venv's PyQt6 module now loads our custom `.abi3.so` which correctly marshals the enum value to C++.
 
 ## Runtime Toggle (shader-on / shader-off)
 
@@ -393,20 +393,25 @@ if (!settings || !settings->GetElementShaderEnabled()) {
 }
 ```
 
-**Settings pipeline** (6 files carry the boolean from Python to Blink):
+**Settings pipeline** (9 files carry the boolean from Python to Blink):
 
 | Layer | File | What |
 |-------|------|------|
 | Qt API | `qwebenginesettings.h` | `ElementShaderEnabled` enum value |
 | Qt internal | `web_engine_settings.cpp` | Default `true`, maps to `WebPreferences` |
 | Bridge struct | `web_preferences.h` | `bool element_shader_enabled = true` |
+| Mojom IPC def | `web_preferences.mojom` | Wire format field for browser→renderer IPC |
+| Mojom serialize | `web_preferences_mojom_traits.h` | Getter for serialization |
+| Mojom deserialize | `web_preferences_mojom_traits.cc` | Reads field from IPC message |
 | Apply mapping | `web_view_impl.cc` | `SetElementShaderEnabled(prefs.element_shader_enabled)` |
 | Blink schema | `settings.json5` | `elementShaderEnabled`, invalidates Style + Paint |
 | Style resolver | `style_resolver.cc` | `GetElementShaderEnabled()` check |
 
+**Critical**: The mojom IPC layer (3 files) is required because Chromium is multi-process. The browser process sets WebPreferences, but the renderer process (Blink) consumes them. Without the mojom serialization, the value never crosses the process boundary.
+
 **Python side** (`qutebrowser/components/shadercommands.py`): Toggles the setting on all profiles via `QWebEngineSettings.setAttribute()`. The settings pipeline automatically propagates to all existing tabs, new tabs, and page refreshes.
 
-**BLOCKER**: The runtime toggle currently does NOT work. The stock PyQt6-WebEngine bindings (from pip) don't know about our custom `ElementShaderEnabled` enum value — accessing it raises `AttributeError`, and passing the raw integer (38) gets silently swallowed by the SIP marshalling layer before reaching our C++ code. The fix is to build custom PyQt6-WebEngine bindings against our modified Qt headers. See TODO item 12.
+**Status**: Fully operational. Custom PyQt6-WebEngine bindings (built from the `pyqt6-webengine/` submodule) include the `ElementShaderEnabled` enum value. Mojom IPC serialization carries the value from the browser process to the renderer process. `QWebEngineSettings.WebAttribute.ElementShaderEnabled` is accessible from Python and correctly marshals to C++ value 38, propagating through to Blink's `Settings::GetElementShaderEnabled()`.
 
 ### Key files
 
@@ -415,6 +420,13 @@ if (!settings || !settings->GetElementShaderEnabled()) {
 | `style_resolver.cc` (line ~198) | C++ Settings check in `ApplyElementShader()` |
 | `qutebrowser/components/shadercommands.py` | Python commands via `QWebEngineSettings` |
 | `qwebenginesettings.h` | C++ enum definition — `ElementShaderEnabled = 38` |
+| `web_engine_settings.cpp` | Qt→WebPreferences mapping |
+| `web_preferences.h` | `bool element_shader_enabled = true` struct field |
+| `web_preferences.mojom` | Mojom IPC wire format definition |
+| `web_preferences_mojom_traits.h` | Mojom serialization getter |
+| `web_preferences_mojom_traits.cc` | Mojom deserialization |
+| `web_view_impl.cc` | Applies deserialized prefs to Blink Settings |
+| `settings.json5` | Blink Settings schema (invalidates Style + Paint) |
 
 ---
 

@@ -29,20 +29,23 @@ qtwebengine                     qtwebengine-fork               Qutebrowser/
 
 **When someone clones your qutebrowser repo**, they get your fork with all your Blink modifications.
 
-## Nested Submodule Structure
-
-**Critical**: There are TWO levels of submodules:
+## Submodule Structure
 
 ```
 Qutebrowser/                          ← main repo
-└── qtwebengine/                      ← submodule (your fork)
-    └── src/3rdparty/                 ← NESTED submodule (qtwebengine-chromium repo)
-        ├── chromium/                 ← regular folder
-        │   └── third_party/blink/... ← where Blink code lives
-        └── gn/
+├── qtwebengine/                      ← submodule (C++ engine fork)
+│   └── src/3rdparty/                 ← NESTED submodule (qtwebengine-chromium repo)
+│       ├── chromium/                 ← regular folder
+│       │   └── third_party/blink/... ← where Blink code lives
+│       └── gn/
+└── pyqt6-webengine/                  ← submodule (Python↔C++ bindings fork)
+    └── sip/QtWebEngineCore/
+        └── qwebenginesettings.sip    ← has ElementShaderEnabled enum
 ```
 
 The Blink files you edit are inside `src/3rdparty/` which is itself a submodule (the `qtwebengine-chromium` repo).
+
+The PyQt6-WebEngine submodule is a flat submodule (no nesting) containing SIP binding definitions. When you add custom C++ API surface (new enum values, new methods), you also add the corresponding SIP declaration here.
 
 ### Where git status shows changes
 

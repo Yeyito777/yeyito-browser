@@ -7,7 +7,7 @@ To implement the element shader (see `element-shader.md`), we need to modify Chr
 1. **Fork QtWebEngine** to our own private repository
 2. **Make our Blink modifications** and commit them to our fork
 3. **Use a git submodule** pointing to our fork (not Qt's upstream)
-4. **Build** and use `LD_LIBRARY_PATH` to load our modified libraries
+4. **Build** and use environment variables to load our modified libraries, process binary, and resources
 
 **Key principle**: Keep `./install.sh` as the single entry point. First build takes hours, but subsequent builds are fast (seconds to minutes) thanks to incremental compilation.
 
@@ -15,7 +15,8 @@ To implement the element shader (see `element-shader.md`), we need to modify Chr
 
 - **QtWebEngine fork**: https://github.com/Yeyito777/yeyitowebengine
 - **Chromium fork**: https://github.com/Yeyito777/qtwebengine-chromium
-- **Branch**: `main` (both repos)
+- **PyQt6-WebEngine fork**: https://github.com/Yeyito777/pyqt6-webengine
+- **Branch**: `main` (all repos)
 - **Base version**: Qt 6.10.0
 - **Verification**: Custom log message in `browser_main_loop.cc`
 
@@ -25,11 +26,12 @@ To implement the element shader (see `element-shader.md`), we need to modify Chr
 Qt's upstream                   Your forks (GitHub)                 Your main repo
 ─────────────                   ───────────────────                 ──────────────
 qt/qtwebengine                  Yeyito777/yeyitowebengine           Yeyito777/yeyito-browser
-qt/qtwebengine-chromium         Yeyito777/qtwebengine-chromium      └── qtwebengine/ ──▶ yeyitowebengine
-                                                                        └── src/3rdparty/ ──▶ qtwebengine-chromium
+qt/qtwebengine-chromium         Yeyito777/qtwebengine-chromium      ├── qtwebengine/ ──▶ yeyitowebengine
+PyQt6-WebEngine (PyPI)          Yeyito777/pyqt6-webengine           │   └── src/3rdparty/ ──▶ qtwebengine-chromium
+                                                                    └── pyqt6-webengine/ ──▶ pyqt6-webengine
 ```
 
-When someone clones your repo with `--recurse-submodules`, they get both forks with all your changes.
+When someone clones your repo with `--recurse-submodules`, they get all forks with all your changes.
 
 ## Directory Structure
 
@@ -39,11 +41,20 @@ Qutebrowser/
 │   └── src/3rdparty/chromium/
 │       └── content/browser/
 │           └── browser_main_loop.cc      ← Current verification log
+├── pyqt6-webengine/                      # Submodule → YOUR fork (SIP bindings)
+│   └── sip/QtWebEngineCore/
+│       └── qwebenginesettings.sip        ← Has ElementShaderEnabled enum
 ├── build/                                 # Gitignored (~50-100GB)
 │   ├── qtwebengine/                       # Ninja build cache, .o files
-│   └── install/                           # Built libraries
-│       └── lib/
-│           └── libQt6WebEngineCore.so.6   ← Your modified library (~1.5GB)
+│   └── install/                           # Built libraries + runtime files
+│       ├── lib/
+│       │   ├── libQt6WebEngineCore.so.6   ← Your modified library (~1.5GB)
+│       │   └── qt6/
+│       │       └── QtWebEngineProcess     ← Renderer subprocess binary
+│       └── share/qt6/
+│           ├── resources/                 ← .pak resource files
+│           └── translations/
+│               └── qtwebengine_locales/   ← Locale .pak files
 ├── install.sh                             # Single entry point
 └── .gitignore                             # Contains "build/"
 ```
@@ -73,6 +84,8 @@ On a 12-core system with 31GB RAM:
 | No changes | ~15 seconds | Ninja checks timestamps |
 | Single `.cc` file change | 1-5 minutes | Recompiles affected targets |
 | Chromium submodule download | ~1 hour | ~6GB compressed data |
+| PyQt6-WebEngine bindings (first) | ~30-60 seconds | SIP generates + compiles C++ wrappers |
+| PyQt6-WebEngine bindings (no changes) | instant | Commit tracking skips build |
 
 ## Build System
 
@@ -86,68 +99,73 @@ QtWebEngine uses **CMake** + **Ninja**:
      │
      ▼
 ┌─────────────────────────────────────────────────────────┐
-│  Check submodule initialized                            │
+│  Phase 1: Check submodules initialized                  │
 │  git submodule update --init --recursive                │
 └─────────────────────────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────────────────────────┐
-│  CMake configure (first time only)                      │
+│  Phase 2: CMake configure (first time only)             │
 │  cmake -S qtwebengine -B build/qtwebengine -GNinja      │
-│  Creates: build/qtwebengine/build.ninja                 │
+│  Then: Ninja build + install (incremental)              │
 └─────────────────────────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────────────────────────┐
-│  Ninja build (incremental)                              │
-│  ninja -C build/qtwebengine -j$(nproc)                  │
-│                                                         │
-│  No changes?  →  "ninja: no work to do" (15 sec)        │
-│  File changed? →  Recompiles affected objects only      │
+│  Phase 3: Python venv + qutebrowser install             │
 └─────────────────────────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────────────────────────┐
-│  Ninja install                                          │
-│  ninja -C build/qtwebengine install                     │
-│  Copies libs to build/install/lib/                      │
+│  Phase 4: Build custom PyQt6-WebEngine bindings         │
+│  1. Patch .pri/.prl files to use custom install paths   │
+│     (no system qt6-webengine; qmake needs absolute paths)│
+│  2. QMAKEPATH → custom mkspecs for module discovery     │
+│  3. sip-install from pyqt6-webengine/ submodule         │
+│  4. Installs .abi3.so into venv site-packages           │
 └─────────────────────────────────────────────────────────┘
      │
      ▼
 ┌─────────────────────────────────────────────────────────┐
-│  Python venv + qutebrowser install                      │
-└─────────────────────────────────────────────────────────┘
-     │
-     ▼
-┌─────────────────────────────────────────────────────────┐
-│  Create launcher with LD_LIBRARY_PATH                   │
-│  Points to build/install/lib/                           │
+│  Phase 5: Create launcher script                        │
+│  Sets 5 env vars: LD_LIBRARY_PATH, QT_PLUGIN_PATH,     │
+│  QTWEBENGINEPROCESS_PATH, QTWEBENGINE_RESOURCES_PATH,   │
+│  QTWEBENGINE_LOCALES_PATH → all point to build/install/ │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## How LD_LIBRARY_PATH Override Works
+## How the Runtime Override Works
 
-We use **Option A**: Keep system PyQt6-WebEngine, override only the Qt shared libraries.
+Two layers of override work together, with no system `qt6-webengine` package required:
+
+**Layer 1: C++ shared libraries + runtime files** — The launcher sets five environment variables that redirect the dynamic linker, Qt plugin system, and WebEngine subprocess/resources to our custom build in `build/install/`. This is where Blink modifications (element shader, scrollbar theming, etc.) live.
+
+| Variable | Points to | Purpose |
+|----------|-----------|---------|
+| `LD_LIBRARY_PATH` | `build/install/lib` | Load our custom `.so` libraries instead of system |
+| `QT_PLUGIN_PATH` | `build/install/plugins` | Qt plugin discovery |
+| `QTWEBENGINEPROCESS_PATH` | `build/install/lib/qt6/QtWebEngineProcess` | Chromium renderer subprocess binary |
+| `QTWEBENGINE_RESOURCES_PATH` | `build/install/share/qt6/resources` | `.pak` resource files (DevTools, error pages, etc.) |
+| `QTWEBENGINE_LOCALES_PATH` | `build/install/share/qt6/translations/qtwebengine_locales` | Locale `.pak` files |
+
+**Layer 2: Python bindings** — Custom-built `PyQt6.QtWebEngineCore.abi3.so` in the venv knows about our custom C++ API additions (e.g., `ElementShaderEnabled` enum). The venv's site-packages takes priority over system site-packages, so our custom binding module is loaded instead of the stock one.
 
 ```
-System has:
-  /usr/lib/libQt6WebEngineCore.so.6         ← System Qt library (e.g., 6.10.2)
-
-Your build produces:
-  build/install/lib/libQt6WebEngineCore.so.6  ← Your modified version (6.10.0)
-
 At runtime:
-  PyQt6.QtWebEngineWidgets (system Python package)
-       │
-       │ imports Qt, which loads shared libraries
-       ▼
-  Dynamic linker (ld.so) searches LD_LIBRARY_PATH first
+  Python imports PyQt6.QtWebEngineCore
        │
        ▼
-  Finds YOUR libQt6WebEngineCore.so.6 in build/install/lib/
+  Finds custom .abi3.so in venv (knows about ElementShaderEnabled)
+       │
+       │ calls setAttribute(ElementShaderEnabled, True)
+       ▼
+  SIP marshals enum value 38 to C++ correctly
        │
        ▼
-  Your custom code runs inside Blink!
+  Dynamic linker loads YOUR libQt6WebEngineCore.so.6 via LD_LIBRARY_PATH
+       │
+       ▼
+  C++ QWebEngineSettings receives value 38 → enables element shader
 ```
 
 **Verification**: The system Qt reports version 6.10.2, while our build reports 6.10.0.
@@ -155,10 +173,33 @@ At runtime:
 **Launcher script** (`~/.local/bin/qutebrowser`):
 ```bash
 #!/usr/bin/env bash
-export LD_LIBRARY_PATH="/home/yeyito/Workspace/Qutebrowser/build/install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-export QT_PLUGIN_PATH="/home/yeyito/Workspace/Qutebrowser/build/install/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
-exec /home/yeyito/.local/share/qutebrowser-venv/bin/python -m qutebrowser "$@"
+export LD_LIBRARY_PATH="…/build/install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export QT_PLUGIN_PATH="…/build/install/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
+export QTWEBENGINEPROCESS_PATH="…/build/install/lib/qt6/QtWebEngineProcess"
+export QTWEBENGINE_RESOURCES_PATH="…/build/install/share/qt6/resources"
+export QTWEBENGINE_LOCALES_PATH="…/build/install/share/qt6/translations/qtwebengine_locales"
+exec …/qutebrowser-venv/bin/python -m qutebrowser "$@"
 ```
+
+## Phase 4 Details: SIP Bindings Without System qt6-webengine
+
+Since the system `qt6-webengine` package is removed (see `dependencies.md`), Phase 4 must teach qmake where to find our custom WebEngine modules. This involves three patching steps before `sip-install` runs:
+
+### 1. `.pri` module spec patching
+
+CMake installs `.pri` files (e.g., `qt_lib_webenginecore.pri`) in `build/install/lib/qt6/mkspecs/modules/`. These use `$$QT_MODULE_LIB_BASE` and `$$QT_MODULE_INCLUDE_BASE` which qmake resolves to `/usr/lib` and `/usr/include/qt6` (system paths). Since there's no system WebEngine, we `sed` these to absolute paths pointing to our install dir.
+
+### 2. `.prl` transitive dependency patching
+
+Qt's `.prl` files (e.g., `libQt6WebEngineWidgets.prl`) list transitive link dependencies using `$$[QT_INSTALL_LIBS]/libQt6WebEngineCore.so`. We only redirect **WebEngine-specific** libraries to our install dir. System libraries (`Qt6Quick`, `Qt6Gui`, etc.) must stay at `$$[QT_INSTALL_LIBS]` since they come from system packages.
+
+### 3. QMAKEPATH for module discovery
+
+`QMAKEPATH="${install_dir}/lib/qt6"` tells qmake to search our custom install for `mkspecs/modules/*.pri` in addition to the system path. This is how qmake discovers `webenginecore` and `webenginewidgets` modules.
+
+### Why this is needed
+
+Without the system package, qmake has no knowledge of WebEngine modules. The `.pri` patching tells qmake where our libraries and headers live. The `.prl` patching ensures transitive link dependencies resolve correctly (our WebEngine libs from our install, everything else from the system). Without these patches, the linker would fail looking for `/usr/lib/libQt6WebEngineCore.so` (which doesn't exist).
 
 ## Fork + Submodule Setup
 
@@ -176,6 +217,9 @@ The forks were set up by:
 2. Forking `qt/qtwebengine-chromium` → `Yeyito777/qtwebengine-chromium` (via `gh repo fork`)
 3. Updating `.gitmodules` in yeyitowebengine to point to the chromium fork
 4. Adding yeyitowebengine as a submodule in the main repo
+5. Importing PyQt6-WebEngine 6.10.0 source from PyPI → `Yeyito777/pyqt6-webengine`
+6. Adding `ElementShaderEnabled` to `qwebenginesettings.sip` in the fork
+7. Adding pyqt6-webengine as a submodule in the main repo
 
 ### Daily Workflow
 

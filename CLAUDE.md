@@ -12,6 +12,9 @@ You're in my fork of qutebrowser's source. This fork includes a custom build of 
 | **shader**, element shader, colors, CSS transforms | `reference/element-shader.md` |
 | **git** commands, commit, push, revert, submodule | `reference/submodules.md` |
 | **build**, install, compile | `reference/build.md` |
+| **bindings**, SIP, PyQt6-WebEngine, enum, WebAttribute | `reference/build.md` (Phase 4) |
+| **new setting**, WebAttribute, mojom, IPC, preferences | `reference/adding-a-web-setting.md` |
+| **dependencies**, packages, pacman, system updates, upstream sync | `reference/dependencies.md` |
 
 ## Custom QtWebEngine Build
 
@@ -20,6 +23,8 @@ This repo uses a **git submodule** (`qtwebengine/`) pointing to a custom fork of
 **If your task involves modifying QtWebEngine or Blink**, read these reference files:
 - `reference/element-shader.md` - Element shader implementation spec
 - `reference/build.md` - Build process, directory structure, verification
+- `reference/adding-a-web-setting.md` - Full pipeline for adding a new QWebEngineSettings attribute (10 touch points across 9 files)
+- `reference/dependencies.md` - System packages, what we build vs use from system
 - `reference/submodules.md` - Git submodule workflow
 
 ### Quick Reference
@@ -50,9 +55,11 @@ vim qtwebengine/src/3rdparty/chromium/...
 
 ```
 Qutebrowser/                     ← main repo (Yeyito777/yeyito-browser)
-└── qtwebengine/                 ← submodule (Yeyito777/yeyitowebengine)
-    └── src/3rdparty/            ← nested submodule (Yeyito777/qtwebengine-chromium)
-        └── chromium/...         ← Blink source lives here
+├── qtwebengine/                 ← submodule (Yeyito777/yeyitowebengine)
+│   └── src/3rdparty/            ← nested submodule (Yeyito777/qtwebengine-chromium)
+│       └── chromium/...         ← Blink source lives here
+└── pyqt6-webengine/             ← submodule (Yeyito777/pyqt6-webengine)
+    └── sip/QtWebEngineCore/     ← SIP bindings (includes custom enum values)
 ```
 
 ### Key Blink Files (in `qtwebengine/src/3rdparty/chromium/`)
@@ -64,10 +71,18 @@ Qutebrowser/                     ← main repo (Yeyito777/yeyito-browser)
 | `third_party/blink/public/common/switches.cc` | CLI flag definitions |
 | `content/browser/browser_main_loop.cc` | Browser process init |
 
+### Key Bindings Files (in `pyqt6-webengine/`)
+
+| File | Purpose |
+|------|---------|
+| `sip/QtWebEngineCore/qwebenginesettings.sip` | WebAttribute enum (includes `ElementShaderEnabled`) |
+| `pyproject.toml` | SIP build configuration |
+
 ### Build Times
 - No changes: instant (skipped)
 - Single .cc file: 1-5 minutes
 - Full rebuild: ~2 hours
+- SIP bindings rebuild: ~30-60 seconds
 
 ## Testing Environment (Python/qutebrowser)
 

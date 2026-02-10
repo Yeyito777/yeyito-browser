@@ -45,11 +45,11 @@ fi
 echo ""
 echo "=== Level 2: yeyitowebengine (qtwebengine) ==="
 cd "$ROOT/qtwebengine"
-if git diff --quiet src/3rdparty; then
-    echo "No submodule change to commit"
+if git diff --quiet && git diff --cached --quiet; then
+    echo "No changes to commit"
 else
-    git add src/3rdparty
-    git commit -m "Update chromium: $MSG"
+    git add -A
+    git commit -m "Update qtwebengine: $MSG"
     echo "Committed"
 fi
 

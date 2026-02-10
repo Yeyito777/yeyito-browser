@@ -2,3 +2,7 @@
 	path = qtwebengine
 	url = https://github.com/Yeyito777/yeyitowebengine.git
 	branch = main
+[submodule "pyqt6-webengine"]
+	path = pyqt6-webengine
+	url = https://github.com/Yeyito777/pyqt6-webengine.git
+	branch = main

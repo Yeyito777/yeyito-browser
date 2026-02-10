@@ -22,10 +22,15 @@ def _get_profiles():
 
 def _set_shader_enabled(enabled):
     """Set the ElementShaderEnabled attribute on all profiles."""
+    import sys
     from qutebrowser.qt.webenginecore import QWebEngineSettings
+    print(f"[SHADER-DEBUG-0] Python: setting ElementShaderEnabled = {enabled}", file=sys.stderr)
     for profile in _get_profiles():
         profile.settings().setAttribute(
             QWebEngineSettings.WebAttribute.ElementShaderEnabled, enabled)
+        val = profile.settings().testAttribute(
+            QWebEngineSettings.WebAttribute.ElementShaderEnabled)
+        print(f"[SHADER-DEBUG-0] Python: testAttribute after set = {val}", file=sys.stderr)
 
 
 def _do_shader_off():
