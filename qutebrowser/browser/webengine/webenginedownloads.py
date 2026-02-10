@@ -6,6 +6,8 @@
 
 import re
 import os.path
+import shutil
+import uuid
 import functools
 
 from qutebrowser.qt import machinery
@@ -15,6 +17,66 @@ from qutebrowser.qt.webenginecore import QWebEngineDownloadRequest
 from qutebrowser.browser import downloads, pdfjs
 from qutebrowser.utils import (debug, usertypes, message, log, objreg, urlutils,
                                utils, version)
+
+
+def _find_tab_for_page(page):
+    """Find the AbstractTab whose QWebEnginePage matches the given page.
+
+    Args:
+        page: A QWebEnginePage instance (from QWebEngineDownloadRequest.page()).
+
+    Returns:
+        The matching AbstractTab, or None if not found.
+    """
+    try:
+        for win_id in objreg.window_registry:
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            for tab in tabbed_browser.widgets():
+                try:
+                    if tab._widget.page() is page:
+                        return tab
+                except (RuntimeError, AttributeError):
+                    continue
+    except (RuntimeError, AttributeError):
+        pass
+    return None
+
+
+def _is_tab_alive(tab):
+    """Check if a tab reference is still valid and usable.
+
+    Args:
+        tab: An AbstractTab instance, or None.
+
+    Returns:
+        True if the tab exists, is not deleted, and not pending removal.
+    """
+    if tab is None:
+        return False
+    try:
+        return not tab.is_deleted() and not tab.pending_removal
+    except RuntimeError:
+        return False
+
+
+def _unique_path(tmpdir, basename):
+    """Get a unique file path in tmpdir using the given basename.
+
+    If basename already exists, appends -2, -3, etc. before the extension.
+
+    Returns:
+        The full path as a string.
+    """
+    path = os.path.join(tmpdir, basename)
+    if not os.path.exists(path):
+        return path
+    stem, ext = os.path.splitext(basename)
+    for i in range(2, 1000):
+        path = os.path.join(tmpdir, "{}-{}{}".format(stem, i, ext))
+        if not os.path.exists(path):
+            return path
+    return path
 
 
 class DownloadItem(downloads.AbstractDownloadItem):
@@ -276,6 +338,34 @@ class DownloadManager(downloads.AbstractDownloadManager):
 
         use_pdfjs = pdfjs.should_use_pdfjs(mime_type, url)
 
+        # Local file PDF shortcut: skip the download entirely, just copy and
+        # navigate the originating tab to the PDF.js viewer.
+        if use_pdfjs and url.scheme() == 'file':
+            page = qt_item.page()
+            origin_tab = _find_tab_for_page(page) if page else None
+            qt_item.cancel()
+
+            local_path = url.toLocalFile()
+            basename = utils.sanitize_filename(os.path.basename(local_path))
+            basename = utils.elide_filename(basename, 50)
+            try:
+                tmpdir = downloads.temp_download_manager.get_tmpdir().name
+                tmp_path = _unique_path(tmpdir, basename)
+                shutil.copy2(local_path, tmp_path)
+            except OSError as exc:
+                message.error("Failed to copy PDF: {}".format(exc))
+                return
+
+            viewer_url = pdfjs.get_main_url(
+                os.path.basename(tmp_path), url)
+            if _is_tab_alive(origin_tab):
+                origin_tab.load_url(viewer_url)
+            else:
+                tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                            window='last-focused')
+                tabbed_browser.tabopen(viewer_url, background=False)
+            return
+
         download = DownloadItem(qt_item, manager=self)
         self._init_item(download, auto_remove=use_pdfjs,
                         suggested_filename=suggested_filename)
@@ -285,6 +375,9 @@ class DownloadManager(downloads.AbstractDownloadManager):
             self._mhtml_target = None
             return
         if use_pdfjs:
+            page = qt_item.page()
+            download._origin_tab = _find_tab_for_page(page) if page else None
+            download._original_basename = download.basename
             download.set_target(downloads.PDFJSDownloadTarget())
             return
 

@@ -432,6 +432,7 @@ class AbstractDownloadItem(QObject):
         pdfjs_requested: Emitted when PDF.js should be opened.
                          arg 1: The filename of the PDF download.
                          arg 2: The original download URL.
+                         arg 3: The originating tab (or None).
     """
 
     data_changed = pyqtSignal()
@@ -439,7 +440,7 @@ class AbstractDownloadItem(QObject):
     error = pyqtSignal(str)
     cancelled = pyqtSignal()
     remove_requested = pyqtSignal()
-    pdfjs_requested = pyqtSignal(str, QUrl)
+    pdfjs_requested = pyqtSignal(str, QUrl, object)
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -813,8 +814,26 @@ class AbstractDownloadItem(QObject):
         if filename is None:  # pragma: no cover
             log.downloads.error("No filename to open the download!")
             return
+
+        # Rename the temp file to a clean name so the tab title is readable.
+        # Original basename is saved before set_target() overwrites self.basename.
+        import uuid
+        original_name = getattr(self, '_original_basename', None)
+        if original_name:
+            tmpdir = os.path.dirname(filename)
+            stem, ext = os.path.splitext(original_name)
+            short_id = uuid.uuid4().hex[:8]
+            clean_name = "{}-{}{}".format(stem, short_id, ext)
+            clean_path = os.path.join(tmpdir, clean_name)
+            try:
+                os.rename(filename, clean_path)
+                filename = clean_path
+            except OSError:
+                pass  # Fall back to the mangled temp name
+
+        origin_tab = getattr(self, '_origin_tab', None)
         self.pdfjs_requested.emit(os.path.basename(filename),
-                                  self.url())
+                                  self.url(), origin_tab)
 
     def cancel_for_origin(self) -> bool:
         """Cancel the download based on URL/origin.
@@ -923,13 +942,20 @@ class AbstractDownloadManager(QObject):
             dl.stats.update_speed()
         self.data_changed.emit(-1)
 
-    @pyqtSlot(str, QUrl)
-    def _on_pdfjs_requested(self, filename: str, original_url: QUrl) -> None:
+    @pyqtSlot(str, QUrl, object)
+    def _on_pdfjs_requested(self, filename: str, original_url: QUrl,
+                            origin_tab=None) -> None:
         """Open PDF.js when a download requests it."""
-        tabbed_browser = objreg.get('tabbed-browser', scope='window',
-                                    window='last-focused')
-        tabbed_browser.tabopen(pdfjs.get_main_url(filename, original_url),
-                               background=False)
+        from qutebrowser.browser.webengine.webenginedownloads import (
+            _is_tab_alive,
+        )
+        viewer_url = pdfjs.get_main_url(filename, original_url)
+        if _is_tab_alive(origin_tab):
+            origin_tab.load_url(viewer_url)
+        else:
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window='last-focused')
+            tabbed_browser.tabopen(viewer_url, background=False)
 
     def _init_item(self, download, auto_remove, suggested_filename):
         """Initialize a newly created DownloadItem."""
