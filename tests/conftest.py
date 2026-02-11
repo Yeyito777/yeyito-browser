@@ -9,6 +9,34 @@ import pathlib
 import sys
 import ssl
 
+# Bootstrap library paths for the custom QtWebEngine build.
+# LD_LIBRARY_PATH is cached by the dynamic linker at process start, so setting
+# it via os.environ has no effect on dlopen. We re-launch pytest in a subprocess
+# that inherits the corrected environment, then exit with its return code.
+_install_dir = pathlib.Path(__file__).resolve().parent.parent / "build" / "install"
+if _install_dir.is_dir():
+    _lib = str(_install_dir / "lib")
+    if _lib not in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep):
+        import subprocess as _sp
+        os.environ["LD_LIBRARY_PATH"] = _lib + (
+            os.pathsep + os.environ["LD_LIBRARY_PATH"]
+            if "LD_LIBRARY_PATH" in os.environ else "")
+        os.environ.setdefault(
+            "QT_PLUGIN_PATH", str(_install_dir / "plugins"))
+        os.environ.setdefault(
+            "QTWEBENGINEPROCESS_PATH",
+            str(_install_dir / "lib" / "qt6" / "QtWebEngineProcess"))
+        os.environ.setdefault(
+            "QTWEBENGINE_RESOURCES_PATH",
+            str(_install_dir / "share" / "qt6" / "resources"))
+        os.environ.setdefault(
+            "QTWEBENGINE_LOCALES_PATH",
+            str(_install_dir / "share" / "qt6" / "translations"
+                / "qtwebengine_locales"))
+        raise SystemExit(
+            _sp.call([sys.executable, "-m", "pytest"] + sys.argv[1:]))
+del _install_dir
+
 import pytest
 import hypothesis
 import hypothesis.database

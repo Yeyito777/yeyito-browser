@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import logging
+import os
 
 import pytest
 
@@ -11,7 +12,7 @@ QWebEngineProfile = QtWebEngineCore.QWebEngineProfile
 QWebEngineSettings = QtWebEngineCore.QWebEngineSettings
 
 from qutebrowser.browser.webengine import webenginesettings
-from qutebrowser.utils import usertypes
+from qutebrowser.utils import usertypes, standarddir
 from qutebrowser.config import configdata
 
 
@@ -161,3 +162,160 @@ def test_parsed_user_agent(qapp):
 def test_profile_setter_settings(private_profile, configdata_init):
     for setting in private_profile.setter._name_to_method:
         assert setting in set(configdata.DATA)
+
+
+class TestCleanupDefaultSkeletons:
+
+    """Tests for _rmdir_if_empty and _cleanup_default_skeletons."""
+
+    def test_rmdir_if_empty_removes_empty_dir(self, tmp_path):
+        d = tmp_path / "empty"
+        d.mkdir()
+        webenginesettings._rmdir_if_empty(str(d))
+        assert not d.exists()
+
+    def test_rmdir_if_empty_keeps_nonempty_dir(self, tmp_path):
+        d = tmp_path / "nonempty"
+        d.mkdir()
+        (d / "file.txt").write_text("data")
+        webenginesettings._rmdir_if_empty(str(d))
+        assert d.exists()
+
+    def test_rmdir_if_empty_nonexistent_is_noop(self, tmp_path):
+        webenginesettings._rmdir_if_empty(str(tmp_path / "nope"))
+
+    def test_cleanup_removes_profile_skeleton(self, tmp_path, monkeypatch):
+        """With basedir, empty QtWebEngine/Default skeleton is removed."""
+        # Set up fake default Qt paths (simulating ~/.local/share/qutebrowser/qutebrowser)
+        default_data = tmp_path / "default" / "data" / "org" / "app"
+        default_cache = tmp_path / "default" / "cache" / "org" / "app"
+
+        # Set up basedir paths (completely separate tree)
+        basedir_data = tmp_path / "basedir" / "data"
+        basedir_cache = tmp_path / "basedir" / "cache"
+        basedir_data.mkdir(parents=True)
+        basedir_cache.mkdir(parents=True)
+
+        # Create the skeleton dirs that Qt would create
+        skeleton = default_data / "QtWebEngine" / "Default"
+        skeleton.mkdir(parents=True)
+
+        monkeypatch.setattr(standarddir, 'data', lambda: str(basedir_data))
+        monkeypatch.setattr(standarddir, 'cache', lambda: str(basedir_cache))
+
+        from qutebrowser.qt.core import QStandardPaths
+        def fake_writable(loc):
+            if loc == QStandardPaths.StandardLocation.AppDataLocation:
+                return str(default_data)
+            if loc == QStandardPaths.StandardLocation.CacheLocation:
+                return str(default_cache)
+            raise ValueError(loc)
+        monkeypatch.setattr(QStandardPaths, 'writableLocation', fake_writable)
+
+        webenginesettings._cleanup_default_skeletons()
+
+        assert not skeleton.exists()
+        assert not (default_data / "QtWebEngine").exists()
+        # Parent dirs should also be removed since they're empty
+        assert not default_data.exists()
+
+    def test_cleanup_removes_pipeline_cache_skeleton(self, tmp_path, monkeypatch):
+        """With basedir, empty qtpipelinecache-* dirs are removed."""
+        default_data = tmp_path / "default" / "data" / "org" / "app"
+        default_cache = tmp_path / "default" / "cache" / "org" / "app"
+
+        basedir_data = tmp_path / "basedir" / "data"
+        basedir_cache = tmp_path / "basedir" / "cache"
+        basedir_data.mkdir(parents=True)
+        basedir_cache.mkdir(parents=True)
+
+        # Create pipeline cache skeleton
+        (default_cache / "qtpipelinecache-x86_64").mkdir(parents=True)
+        (default_cache / "qtpipelinecache-aarch64").mkdir(parents=True)
+
+        monkeypatch.setattr(standarddir, 'data', lambda: str(basedir_data))
+        monkeypatch.setattr(standarddir, 'cache', lambda: str(basedir_cache))
+
+        from qutebrowser.qt.core import QStandardPaths
+        def fake_writable(loc):
+            if loc == QStandardPaths.StandardLocation.AppDataLocation:
+                return str(default_data)
+            if loc == QStandardPaths.StandardLocation.CacheLocation:
+                return str(default_cache)
+            raise ValueError(loc)
+        monkeypatch.setattr(QStandardPaths, 'writableLocation', fake_writable)
+
+        webenginesettings._cleanup_default_skeletons()
+
+        assert not (default_cache / "qtpipelinecache-x86_64").exists()
+        assert not (default_cache / "qtpipelinecache-aarch64").exists()
+        assert not default_cache.exists()
+
+    def test_cleanup_skips_when_no_basedir(self, tmp_path, monkeypatch):
+        """Without basedir, default paths are inside our standarddir tree.
+
+        Cleanup should be skipped because the dirs may contain real data.
+        """
+        # Simulate no-basedir: our_data is parent of default_data
+        our_data = tmp_path / "share" / "qutebrowser"
+        default_data = our_data / "qutebrowser"  # org-qualified subdir
+        our_cache = tmp_path / "cache" / "qutebrowser"
+        default_cache = our_cache / "qutebrowser"
+
+        our_data.mkdir(parents=True)
+        our_cache.mkdir(parents=True)
+
+        skeleton = default_data / "QtWebEngine" / "Default"
+        skeleton.mkdir(parents=True)
+        (default_cache / "qtpipelinecache-test").mkdir(parents=True)
+
+        monkeypatch.setattr(standarddir, 'data', lambda: str(our_data))
+        monkeypatch.setattr(standarddir, 'cache', lambda: str(our_cache))
+
+        from qutebrowser.qt.core import QStandardPaths
+        def fake_writable(loc):
+            if loc == QStandardPaths.StandardLocation.AppDataLocation:
+                return str(default_data)
+            if loc == QStandardPaths.StandardLocation.CacheLocation:
+                return str(default_cache)
+            raise ValueError(loc)
+        monkeypatch.setattr(QStandardPaths, 'writableLocation', fake_writable)
+
+        webenginesettings._cleanup_default_skeletons()
+
+        # Nothing should be removed
+        assert skeleton.exists()
+        assert (default_cache / "qtpipelinecache-test").exists()
+
+    def test_cleanup_keeps_nonempty_dirs(self, tmp_path, monkeypatch):
+        """Non-empty skeleton dirs (e.g. from a previous no-basedir session)
+        should not be removed."""
+        default_data = tmp_path / "default" / "data" / "org" / "app"
+        default_cache = tmp_path / "default" / "cache" / "org" / "app"
+
+        basedir_data = tmp_path / "basedir" / "data"
+        basedir_cache = tmp_path / "basedir" / "cache"
+        basedir_data.mkdir(parents=True)
+        basedir_cache.mkdir(parents=True)
+
+        skeleton = default_data / "QtWebEngine" / "Default"
+        skeleton.mkdir(parents=True)
+        (skeleton / "some_data.db").write_text("real data")
+
+        monkeypatch.setattr(standarddir, 'data', lambda: str(basedir_data))
+        monkeypatch.setattr(standarddir, 'cache', lambda: str(basedir_cache))
+
+        from qutebrowser.qt.core import QStandardPaths
+        def fake_writable(loc):
+            if loc == QStandardPaths.StandardLocation.AppDataLocation:
+                return str(default_data)
+            if loc == QStandardPaths.StandardLocation.CacheLocation:
+                return str(default_cache)
+            raise ValueError(loc)
+        monkeypatch.setattr(QStandardPaths, 'writableLocation', fake_writable)
+
+        webenginesettings._cleanup_default_skeletons()
+
+        # Dir with real data must survive
+        assert skeleton.exists()
+        assert (skeleton / "some_data.db").exists()

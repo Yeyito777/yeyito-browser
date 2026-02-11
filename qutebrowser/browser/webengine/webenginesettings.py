@@ -461,6 +461,94 @@ def _clear_webengine_permissions_json():
         )
 
 
+def _rmdir_if_empty(path):
+    """Remove a directory if it exists and is empty."""
+    try:
+        if os.path.isdir(path) and not os.listdir(path):
+            os.rmdir(path)
+            log.misc.debug(f"Removed empty skeleton directory: {path}")
+    except OSError:
+        pass
+
+
+def _cleanup_default_skeletons():
+    """Remove empty skeleton directories created at Qt's default locations.
+
+    When --basedir redirects storage, Qt still creates empty directories
+    at its QStandardPaths defaults before we can redirect:
+    - QWebEngineProfile("Default") creates {AppDataLocation}/QtWebEngine/Default/
+    - Qt's RHI creates {CacheLocation}/qtpipelinecache-*/
+
+    We clean these up so --basedir keeps all state fully contained.
+    """
+    from qutebrowser.qt.core import QStandardPaths
+
+    # These are the paths Qt uses internally (with org/app name set).
+    default_data = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.AppDataLocation)
+    default_cache = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.CacheLocation)
+
+    our_data = standarddir.data()
+    our_cache = standarddir.cache()
+
+    # Only clean when basedir moved our paths away from Qt's defaults.
+    # Without basedir, Qt's org-qualified default paths (e.g.
+    # ~/.local/share/qutebrowser/qutebrowser) are inside our standarddir
+    # tree (e.g. ~/.local/share/qutebrowser) and may contain real data.
+    norm_default_data = os.path.normpath(default_data)
+    norm_default_cache = os.path.normpath(default_cache)
+    norm_our_data = os.path.normpath(our_data)
+    norm_our_cache = os.path.normpath(our_cache)
+
+    if not norm_default_data.startswith(norm_our_data + os.sep):
+        # Profile skeleton: {default_data}/QtWebEngine/Default/
+        _rmdir_if_empty(os.path.join(default_data, 'QtWebEngine', 'Default'))
+        _rmdir_if_empty(os.path.join(default_data, 'QtWebEngine'))
+        _rmdir_if_empty(default_data)
+        _rmdir_if_empty(os.path.dirname(default_data))
+
+    _cleanup_cache_skeletons(default_cache, norm_default_cache, norm_our_cache)
+
+
+def _cleanup_cache_skeletons(default_cache, norm_default_cache, norm_our_cache):
+    """Remove empty pipeline cache skeleton dirs at the default cache location."""
+    if norm_default_cache.startswith(norm_our_cache + os.sep):
+        return
+
+    if os.path.isdir(default_cache):
+        try:
+            for entry in os.listdir(default_cache):
+                if entry.startswith('qtpipelinecache'):
+                    _rmdir_if_empty(os.path.join(default_cache, entry))
+        except OSError:
+            pass
+    _rmdir_if_empty(default_cache)
+    _rmdir_if_empty(os.path.dirname(default_cache))
+
+
+def _register_cache_cleanup_atexit():
+    """Register an atexit handler for pipeline cache cleanup.
+
+    Qt's RHI recreates qtpipelinecache-* during QApplication::exit(), which
+    runs after our shutdown() handler. atexit runs after Qt has fully exited.
+    """
+    import atexit
+    from qutebrowser.qt.core import QStandardPaths
+
+    default_cache = QStandardPaths.writableLocation(
+        QStandardPaths.StandardLocation.CacheLocation)
+    norm_default_cache = os.path.normpath(default_cache)
+    norm_our_cache = os.path.normpath(standarddir.cache())
+
+    if norm_default_cache.startswith(norm_our_cache + os.sep):
+        return  # Not using basedir
+
+    atexit.register(
+        _cleanup_cache_skeletons,
+        default_cache, norm_default_cache, norm_our_cache)
+
+
 def _init_default_profile():
     """Init the default QWebEngineProfile."""
     global default_profile
@@ -499,6 +587,13 @@ def _init_default_profile():
         os.path.join(standarddir.cache(), 'webengine'))
     default_profile.setPersistentStoragePath(
         os.path.join(standarddir.data(), 'webengine'))
+
+    # Clean up empty skeleton dirs at Qt's default locations.
+    # Handles: profile skeleton (just created) + pipeline cache (previous session).
+    _cleanup_default_skeletons()
+    # Qt's RHI recreates pipeline cache during QApplication::exit(), after our
+    # shutdown() runs. Register atexit handler to catch that final recreation.
+    _register_cache_cleanup_atexit()
 
     _init_profile(default_profile)
 
@@ -664,4 +759,5 @@ def init():
 
 
 def shutdown():
-    pass
+    # Clean up empty skeleton dirs (pipeline cache created during this session).
+    _cleanup_default_skeletons()
