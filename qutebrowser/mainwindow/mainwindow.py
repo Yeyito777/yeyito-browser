@@ -8,6 +8,8 @@ import binascii
 import base64
 import itertools
 import functools
+import subprocess
+import sys
 from typing import Optional, cast
 from collections.abc import MutableSequence
 
@@ -624,6 +626,32 @@ class MainWindow(QWidget):
         self._downloadview.updateGeometry()
         self.tabbed_browser.widget.tab_bar().refresh()
 
+    def _set_dwm_save_argv(self):
+        """Set _DWM_SAVE_ARGV X11 property for dwm persist mode.
+
+        Only runs for the first window on X11. Uses xprop to set the property
+        so dwm can restore qutebrowser across restarts.
+        """
+        if self.win_id != 0:
+            return
+        if qtutils.is_wayland():
+            return
+        try:
+            argv_parts = ['qutebrowser']
+            if objects.args.basedir is not None:
+                argv_parts += ['--basedir', objects.args.basedir]
+            save_argv = ' '.join(argv_parts)
+            wid = int(self.winId())
+            subprocess.Popen(
+                ['xprop', '-id', str(wid),
+                 '-f', '_DWM_SAVE_ARGV', '8u',
+                 '-set', '_DWM_SAVE_ARGV', save_argv],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            log.misc.debug("Failed to set _DWM_SAVE_ARGV")
+
     def showEvent(self, e):
         """Extend showEvent to register us as the last-visible-main-window.
 
@@ -632,6 +660,9 @@ class MainWindow(QWidget):
         """
         super().showEvent(e)
         objreg.register('last-visible-main-window', self, update=True)
+        if not getattr(self, '_dwm_save_registered', False):
+            self._dwm_save_registered = True
+            self._set_dwm_save_argv()
 
     def _confirm_quit(self):
         """Confirm that this window should be closed.
