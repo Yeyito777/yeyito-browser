@@ -49,6 +49,8 @@ def get_argparser():
                                      description=qutebrowser.__description__)
     parser.add_argument('-B', '--basedir', help="Base directory for all "
                         "storage.")
+    parser.add_argument('--no-basedir', action='store_true',
+                        help="Allow running without --basedir.")
     parser.add_argument('-C', '--config-py', help="Path to config.py.",
                         metavar='CONFIG')
     parser.add_argument('-V', '--version', help="Show version and quit.",
@@ -227,6 +229,8 @@ def main():
     args = parser.parse_args(argv)
     if args.json_args is not None:
         args = _unpack_json_args(args)
+    if not args.basedir and not args.temp_basedir and not args.no_basedir:
+        parser.error("--basedir is required. Use --no-basedir to override.")
     earlyinit.early_init(args)
     # We do this imports late as earlyinit needs to be run first (because of
     # version checking and other early initialization)
