@@ -142,6 +142,16 @@ def _on_config_changed(changed_name: str) -> None:
                     hook()
 
 
+def run_deferred_hooks() -> None:
+    """Run init hooks for components that were loaded with skip_hooks=True."""
+    for mod_info in _module_infos:
+        if mod_info.skip_hooks and mod_info.init_hook is not None:
+            log.extensions.debug("Running deferred init hook {!r}"
+                                 .format(mod_info.init_hook.__name__))
+            mod_info.init_hook(_get_init_context())
+            mod_info.skip_hooks = False
+
+
 def init() -> None:
     config.instance.changed.connect(_on_config_changed)
 

@@ -142,6 +142,7 @@ def qt_mainloop():
 def init(*, args: argparse.Namespace) -> None:
     """Initialize everything."""
     from qutebrowser.misc.earlyinit import startup_checkpoint
+    from qutebrowser.qt.core import QTimer
     log.init.debug("Starting init...")
 
     crashsignal.crash_handler.init_faulthandler()
@@ -152,10 +153,8 @@ def init(*, args: argparse.Namespace) -> None:
     objects.qapp.setQuitLockEnabled(False)
     quitter.instance.shutting_down.connect(QApplication.closeAllWindows)
 
-    _init_icon()
-
     loader.init()
-    loader.load_components()
+    loader.load_components(skip_hooks=True)
     startup_checkpoint("_init_modules() — all module initialization")
     try:
         _init_modules(args=args)
@@ -180,8 +179,40 @@ def init(*, args: argparse.Namespace) -> None:
         QDesktopServices.setUrlHandler(
             scheme, open_desktopservices_url)
 
+    # Defer non-essential initialization to after the window is visible.
+    QTimer.singleShot(0, functools.partial(_deferred_init, args))
+
     log.init.debug("Init done!")
     crashsignal.crash_handler.raise_crashdlg()
+
+
+def _deferred_init(args):
+    """Initialize non-essential modules after the window is shown."""
+    from qutebrowser.misc.earlyinit import startup_checkpoint
+    startup_checkpoint("_deferred_init() — post-show initialization")
+
+    _init_icon()
+
+    loader.run_deferred_hooks()
+
+    log.init.debug("Initializing proxy...")
+    proxy.init()
+    quitter.instance.shutting_down.connect(proxy.shutdown)
+
+    log.init.debug("Initializing quickmarks...")
+    quickmark_manager = urlmarks.QuickmarkManager(objects.qapp)
+    objreg.register('quickmark-manager', quickmark_manager)
+
+    log.init.debug("Initializing bookmarks...")
+    bookmark_manager = urlmarks.BookmarkManager(objects.qapp)
+    objreg.register('bookmark-manager', bookmark_manager)
+
+    log.init.debug("Misc deferred initialization...")
+    macros.init()
+    windowundo.init()
+    nativeeventfilter.init()
+
+    startup_checkpoint("_deferred_init() done")
 
 
 def _init_icon():
@@ -464,6 +495,10 @@ def _on_config_changed(name: str) -> None:
 def _init_modules(*, args):
     """Initialize all 'modules' which need to be initialized.
 
+    Non-essential modules (proxy, quickmarks, bookmarks, cookies, cache,
+    greasemonkey, macros, etc.) are deferred to _deferred_init() which runs
+    after the window is shown.
+
     Args:
         args: The argparse namespace.
     """
@@ -489,10 +524,6 @@ def _init_modules(*, args):
     log.init.debug("Initializing network...")
     networkmanager.init()
 
-    log.init.debug("Initializing proxy...")
-    proxy.init()
-    quitter.instance.shutting_down.connect(proxy.shutdown)
-
     log.init.debug("Initializing downloads...")
     downloads.init()
     quitter.instance.shutting_down.connect(downloads.shutdown)
@@ -510,9 +541,6 @@ def _init_modules(*, args):
             sys.exit(usertypes.Exit.err_init)
     startup_checkpoint("  history.init() done")
 
-    log.init.debug("Initializing command history...")
-    cmdhistory.init()
-
     startup_checkpoint("  websettings.init() — WebEngine settings + profiles")
     log.init.debug("Initializing websettings...")
     websettings.init(args)
@@ -526,13 +554,11 @@ def _init_modules(*, args):
     if not args.no_err_windows:
         crashsignal.crash_handler.display_faulthandler()
 
-    log.init.debug("Initializing quickmarks...")
-    quickmark_manager = urlmarks.QuickmarkManager(objects.qapp)
-    objreg.register('quickmark-manager', quickmark_manager)
+    log.init.debug("Initializing command history...")
+    cmdhistory.init()
 
-    log.init.debug("Initializing bookmarks...")
-    bookmark_manager = urlmarks.BookmarkManager(objects.qapp)
-    objreg.register('bookmark-manager', bookmark_manager)
+    log.init.debug("Initializing Greasemonkey...")
+    greasemonkey.init()
 
     log.init.debug("Initializing cookies...")
     cookies.init(objects.qapp)
@@ -542,15 +568,6 @@ def _init_modules(*, args):
 
     log.init.debug("Initializing downloads...")
     qtnetworkdownloads.init()
-
-    startup_checkpoint("  greasemonkey.init()")
-    log.init.debug("Initializing Greasemonkey...")
-    greasemonkey.init()
-
-    log.init.debug("Misc initialization...")
-    macros.init()
-    windowundo.init()
-    nativeeventfilter.init()
 
 
 class Application(QApplication):
