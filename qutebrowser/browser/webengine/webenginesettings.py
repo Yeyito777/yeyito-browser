@@ -559,6 +559,13 @@ def init_private_profile():
     _init_profile(private_profile)
 
 
+def ensure_private_profile():
+    """Lazily initialize and return the private profile on first access."""
+    if private_profile is None:
+        init_private_profile()
+    return private_profile
+
+
 def _init_site_specific_quirks():
     """Add custom user-agent settings for problematic sites.
 
@@ -663,6 +670,8 @@ def _init_default_settings():
 
 def init():
     """Initialize the global QWebSettings."""
+    from qutebrowser.misc.earlyinit import startup_checkpoint
+    startup_checkpoint("      webenginequtescheme.init() + spell.init()")
     webenginequtescheme.init()
     spell.init()
 
@@ -671,37 +680,44 @@ def init():
     # https://www.riverbankcomputing.com/pipermail/pyqt/2016-September/038075.html
     global _qute_scheme_handler
     app = QApplication.instance()
+    startup_checkpoint("      QuteSchemeHandler()")
     log.init.debug("Initializing qute://* handler...")
     _qute_scheme_handler = webenginequtescheme.QuteSchemeHandler(parent=app)
 
     global _req_interceptor
+    startup_checkpoint("      RequestInterceptor()")
     log.init.debug("Initializing request interceptor...")
     from qutebrowser.browser.webengine import interceptor
     _req_interceptor = interceptor.RequestInterceptor(parent=app)
 
     global _download_manager
+    startup_checkpoint("      DownloadManager()")
     log.init.debug("Initializing QtWebEngine downloads...")
     _download_manager = webenginedownloads.DownloadManager(parent=app)
     objreg.register('webengine-download-manager', _download_manager)
     from qutebrowser.misc import quitter
     quitter.instance.shutting_down.connect(_download_manager.shutdown)
 
+    startup_checkpoint("      notification.init()")
     log.init.debug("Initializing notification presenter...")
     notification.init()
 
+    startup_checkpoint("      WebEngineSettings()")
     log.init.debug("Initializing global settings...")
     global _global_settings
     _global_settings = WebEngineSettings(_SettingsWrapper())
 
+    startup_checkpoint("      _init_default_profile()")
     log.init.debug("Initializing profiles...")
 
     # Apply potential resource patches while initializing profiles.
     with pakjoy.patch_webengine():
         _init_default_profile()
+    startup_checkpoint("      _init_default_profile() done")
 
-    init_private_profile()
     config.instance.changed.connect(_update_settings)
 
+    startup_checkpoint("      _init_site_specific_quirks() + _init_default_settings()")
     log.init.debug("Misc initialization...")
     _init_site_specific_quirks()
     _init_default_settings()

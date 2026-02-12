@@ -50,8 +50,8 @@ class WebEngineView(QWebEngineView):
         assert style is not None
         theme_color = style.standardPalette().color(QPalette.ColorRole.Base)
         if private:
-            assert webenginesettings.private_profile is not None
-            profile = webenginesettings.private_profile
+            profile = webenginesettings.ensure_private_profile()
+            assert profile is not None
             assert profile.isOffTheRecord()
         else:
             profile = webenginesettings.default_profile
