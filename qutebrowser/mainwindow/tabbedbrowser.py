@@ -244,7 +244,7 @@ class TabbedBrowser(QWidget):
         self.tab_deque = TabDeque()
         config.instance.changed.connect(self._on_config_changed)
         quitter.instance.shutting_down.connect(self.shutdown)
-        self._tab_runtime = tabruntime.TabRuntimeManager(self)
+        self.tab_runtime = tabruntime.TabRuntimeManager(self)
 
     def _update_stack_size(self):
         newsize = config.instance.get('tabs.undo_stack_size')

@@ -300,14 +300,19 @@ def process_pos_args(args, via_ipc=False, cwd=None, target_arg=None):
         window.maybe_raise()
         return
 
+    no_raise = target_arg in {'tab-silent', 'tab-bg-silent'}
+
     for cmd in args:
         if cmd.startswith(':'):
             if window is None:
-                window = mainwindow.get_window(via_ipc=via_ipc, target=command_target)
-                # FIXME preserving old behavior, but we probably shouldn't be
-                # doing this...
-                # See https://github.com/qutebrowser/qutebrowser/issues/5094
-                window.maybe_raise()
+                window = mainwindow.get_window(via_ipc=via_ipc,
+                                               target=command_target,
+                                               no_raise=no_raise)
+                if not no_raise:
+                    # FIXME preserving old behavior, but we probably shouldn't
+                    # be doing this...
+                    # See https://github.com/qutebrowser/qutebrowser/issues/5094
+                    window.maybe_raise()
 
             log.init.debug("Startup cmd {!r}".format(cmd))
             commandrunner = runners.CommandRunner(window.win_id)

@@ -1911,3 +1911,30 @@ class CommandDispatcher:
 
         log.misc.debug('state before fullscreen: {}'.format(
             debug.qflags_key(Qt, window.state_before_fullscreen)))
+
+    @cmdutils.register(instance='command-dispatcher', scope='window')
+    def dom_snapshot(self, tab_id: int = None):
+        """Save a tab's DOM to its runtime directory as dom.html.
+
+        Args:
+            tab_id: The tab ID to snapshot. Defaults to the current tab.
+        """
+        if tab_id is None:
+            tab_id = self._current_widget().tab_id
+        tab_id_str = str(tab_id)
+
+        # Try current window first
+        if self._tabbed_browser.tab_runtime.snapshot_dom(tab_id_str):
+            return
+
+        # Search other windows
+        for win_id in objreg.window_registry:
+            if win_id == self._win_id:
+                continue
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            if tabbed_browser.tab_runtime.snapshot_dom(tab_id_str):
+                return
+
+        raise cmdutils.CommandError(
+            "No tab with ID {} found".format(tab_id))
