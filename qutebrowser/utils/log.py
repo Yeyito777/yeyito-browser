@@ -147,6 +147,7 @@ LOGGER_NAMES = [
 
 ram_handler: Optional['RAMHandler'] = None
 console_handler: Optional[logging.Handler] = None
+file_handler: Optional[logging.FileHandler] = None
 console_filter: Optional["LogFilter"] = None
 
 
@@ -197,6 +198,17 @@ def init_log(args: argparse.Namespace) -> None:
     logging.captureWarnings(True)
     _init_py_warnings()
     _log_inited = True
+
+
+def init_runtime_log(runtime_dir: str) -> None:
+    """Init a file handler that logs debug output to the runtime directory."""
+    global file_handler
+    log_path = os.path.join(runtime_dir, 'runtime-log.log')
+    file_handler = logging.FileHandler(log_path, mode='w', encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(
+        ColoredFormatter(EXTENDED_FMT, DATEFMT, '{', use_colors=False))
+    logging.getLogger().addHandler(file_handler)
 
 
 def _init_py_warnings() -> None:

@@ -72,6 +72,7 @@ def run(args):
 
     log.init.debug("Initializing directories...")
     standarddir.init(args)
+    log.init_runtime_log(standarddir.runtime())
     resources.preload()
 
     log.init.debug("Initializing config...")
