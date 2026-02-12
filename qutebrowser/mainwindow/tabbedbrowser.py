@@ -21,7 +21,7 @@ from qutebrowser.qt.core import pyqtSignal, pyqtSlot, QTimer, QUrl, QPoint
 from qutebrowser.config import config
 from qutebrowser.keyinput import modeman
 from qutebrowser.mainwindow import tabwidget, mainwindow
-from qutebrowser.browser import signalfilter, browsertab, history
+from qutebrowser.browser import signalfilter, browsertab, history, tabruntime
 from qutebrowser.utils import (log, usertypes, utils, qtutils,
                                urlutils, message, jinja, version)
 from qutebrowser.misc import quitter, objects
@@ -244,6 +244,7 @@ class TabbedBrowser(QWidget):
         self.tab_deque = TabDeque()
         config.instance.changed.connect(self._on_config_changed)
         quitter.instance.shutting_down.connect(self.shutdown)
+        self._tab_runtime = tabruntime.TabRuntimeManager(self)
 
     def _update_stack_size(self):
         newsize = config.instance.get('tabs.undo_stack_size')
