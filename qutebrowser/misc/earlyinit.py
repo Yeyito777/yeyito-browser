@@ -15,6 +15,7 @@ except ImportError:
     hunter = None
 
 import sys
+import time
 import faulthandler
 import traceback
 import signal
@@ -35,6 +36,33 @@ from qutebrowser.qt import machinery
 
 
 START_TIME = datetime.datetime.now()
+_STARTUP_T0 = time.perf_counter()
+_startup_log_file = None
+_startup_buffer = []
+
+
+def startup_set_logdir(runtime_dir):
+    """Set the runtime dir and flush buffered checkpoints to a dedicated file."""
+    global _startup_log_file
+    import os
+    _startup_log_file = open(
+        os.path.join(runtime_dir, 'startup-timing.log'), 'w')
+    for line in _startup_buffer:
+        _startup_log_file.write(line)
+    _startup_log_file.flush()
+    _startup_buffer.clear()
+
+
+def startup_checkpoint(label):
+    """Log a startup timing checkpoint to stderr and startup-timing.log."""
+    elapsed = time.perf_counter() - _STARTUP_T0
+    line = f"[STARTUP {elapsed:8.3f}s] {label}\n"
+    sys.stderr.write(line)
+    if _startup_log_file is not None:
+        _startup_log_file.write(line)
+        _startup_log_file.flush()
+    else:
+        _startup_buffer.append(line)
 
 
 def _missing_str(name, *, webengine=False):
@@ -326,12 +354,14 @@ def early_init(args):
     Args:
         args: The argparse namespace.
     """
+    startup_checkpoint("early_init() start")
     # Init logging as early as possible
     init_log(args)
     # First we initialize the faulthandler as early as possible, so we
     # theoretically could catch segfaults occurring later during earlyinit.
     init_faulthandler()
     # Then we configure the selected Qt wrapper
+    startup_checkpoint("machinery.init() — Qt wrapper selection")
     info = machinery.init(args)
     # Here we check if QtCore is available, and if not, print a message to the
     # console or via Tk.
@@ -345,4 +375,6 @@ def early_init(args):
     configure_pyqt()
     check_ssl_support()
     check_optimize_flag()
+    startup_checkpoint("webengine_early_import() — import QtWebEngine before QApp")
     webengine_early_import()
+    startup_checkpoint("early_init() done")

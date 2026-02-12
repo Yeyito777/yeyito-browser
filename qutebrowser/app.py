@@ -65,6 +65,9 @@ from qutebrowser.browser import commands
 
 def run(args):
     """Initialize everything and run the application."""
+    from qutebrowser.misc.earlyinit import startup_checkpoint
+    startup_checkpoint("app.run() start")
+
     if args.temp_basedir:
         args.basedir = tempfile.mkdtemp(prefix='qutebrowser-basedir-')
 
@@ -73,13 +76,18 @@ def run(args):
     log.init.debug("Initializing directories...")
     standarddir.init(args)
     log.init_runtime_log(standarddir.runtime())
+    earlyinit.startup_set_logdir(standarddir.runtime())
     resources.preload()
 
+    startup_checkpoint("configinit.early_init() — config + backend detection")
     log.init.debug("Initializing config...")
     configinit.early_init(args)
+    startup_checkpoint("configinit.early_init() done")
 
+    startup_checkpoint("Application() — QApplication constructor")
     log.init.debug("Initializing application...")
     app = Application(args)
+    startup_checkpoint("Application() done")
     objects.qapp = app
     app.setOrganizationName("qutebrowser")
     app.setApplicationName("qutebrowser")
@@ -94,12 +102,14 @@ def run(args):
     quitter.init(args)
     crashsignal.init(q_app=app, args=args, quitter=quitter.instance)
 
+    startup_checkpoint("ipc.send_or_listen()")
     try:
         server = ipc.send_or_listen(args)
     except ipc.Error:
         # ipc.send_or_listen already displays the error message for us.
         # We didn't really initialize much so far, so we just quit hard.
         sys.exit(usertypes.Exit.err_ipc)
+    startup_checkpoint("ipc.send_or_listen() done")
 
     if server is None:
         if args.backend is not None:
@@ -107,6 +117,7 @@ def run(args):
                 "Backend from the running instance will be used")
         sys.exit(usertypes.Exit.ok)
 
+    startup_checkpoint("init() — main initialization")
     init(args=args)
 
     quitter.instance.shutting_down.connect(server.shutdown)
@@ -114,6 +125,7 @@ def run(args):
         lambda args, target_arg, cwd:
         process_pos_args(args, cwd=cwd, via_ipc=True, target_arg=target_arg))
 
+    startup_checkpoint("entering Qt main loop")
     ret = qt_mainloop()
     return ret
 
@@ -129,6 +141,7 @@ def qt_mainloop():
 
 def init(*, args: argparse.Namespace) -> None:
     """Initialize everything."""
+    from qutebrowser.misc.earlyinit import startup_checkpoint
     log.init.debug("Starting init...")
 
     crashsignal.crash_handler.init_faulthandler()
@@ -143,6 +156,7 @@ def init(*, args: argparse.Namespace) -> None:
 
     loader.init()
     loader.load_components()
+    startup_checkpoint("_init_modules() — all module initialization")
     try:
         _init_modules(args=args)
     except (OSError, UnicodeDecodeError, browsertab.WebTabError) as e:
@@ -150,6 +164,7 @@ def init(*, args: argparse.Namespace) -> None:
                                no_err_windows=args.no_err_windows,
                                pre_text="Error while initializing")
         sys.exit(usertypes.Exit.err_init)
+    startup_checkpoint("_init_modules() done")
 
     log.init.debug("Initializing eventfilter...")
     eventfilter.init()
@@ -157,7 +172,9 @@ def init(*, args: argparse.Namespace) -> None:
     log.init.debug("Connecting signals...")
     objects.qapp.focusChanged.connect(on_focus_changed)
 
+    startup_checkpoint("_process_args() — session restore / window creation")
     _process_args(args)
+    startup_checkpoint("_process_args() done")
 
     for scheme in ['http', 'https', 'qute']:
         QDesktopServices.setUrlHandler(
@@ -187,8 +204,12 @@ def _init_icon():
 
 def _process_args(args):
     """Open startpage etc. and process commandline args."""
+    from qutebrowser.misc.earlyinit import startup_checkpoint
+
+    startup_checkpoint("  sessions.load_default()")
     if not args.override_restore:
         sessions.load_default(args.session)
+    startup_checkpoint("  sessions.load_default() done")
 
     new_window = None
     if not sessions.session_manager.did_load:
@@ -202,14 +223,18 @@ def _process_args(args):
                                    no_err_windows=args.no_err_windows)
             sys.exit(usertypes.Exit.err_init)
 
+        startup_checkpoint("  MainWindow() constructor")
         new_window = mainwindow.MainWindow(private=private)
+        startup_checkpoint("  MainWindow() constructor done")
 
     process_pos_args(args.command)
     _open_startpage()
     _open_special_pages(args)
 
     if new_window is not None and not args.nowindow:
+        startup_checkpoint("  window.show() — map window")
         new_window.show()
+        startup_checkpoint("  window.show() returned")
         objects.qapp.setActiveWindow(new_window)
 
     delta = datetime.datetime.now() - earlyinit.START_TIME
@@ -442,6 +467,8 @@ def _init_modules(*, args):
     Args:
         args: The argparse namespace.
     """
+    from qutebrowser.misc.earlyinit import startup_checkpoint
+
     log.init.debug("Initializing logging from config...")
     log.init_from_config(config.val)
     config.instance.changed.connect(_on_config_changed)
@@ -452,6 +479,7 @@ def _init_modules(*, args):
     quitter.instance.shutting_down.connect(save_manager.shutdown)
     configinit.late_init(save_manager)
 
+    startup_checkpoint("  backendproblem.init()")
     log.init.debug("Checking backend requirements...")
     backendproblem.init(args=args, save_manager=save_manager)
 
@@ -469,6 +497,7 @@ def _init_modules(*, args):
     downloads.init()
     quitter.instance.shutting_down.connect(downloads.shutdown)
 
+    startup_checkpoint("  history.init() — SQL/history database")
     with debug.log_time("init", "Initializing SQL/history"):
         try:
             log.init.debug("Initializing web history...")
@@ -479,14 +508,18 @@ def _init_modules(*, args):
                                    pre_text='Error initializing SQL',
                                    no_err_windows=args.no_err_windows)
             sys.exit(usertypes.Exit.err_init)
+    startup_checkpoint("  history.init() done")
 
     log.init.debug("Initializing command history...")
     cmdhistory.init()
 
+    startup_checkpoint("  websettings.init() — WebEngine settings + profiles")
     log.init.debug("Initializing websettings...")
     websettings.init(args)
     quitter.instance.shutting_down.connect(websettings.shutdown)
+    startup_checkpoint("  websettings.init() done")
 
+    startup_checkpoint("  sessions.init()")
     log.init.debug("Initializing sessions...")
     sessions.init(objects.qapp)
 
@@ -510,6 +543,7 @@ def _init_modules(*, args):
     log.init.debug("Initializing downloads...")
     qtnetworkdownloads.init()
 
+    startup_checkpoint("  greasemonkey.init()")
     log.init.debug("Initializing Greasemonkey...")
     greasemonkey.init()
 
@@ -541,13 +575,16 @@ class Application(QApplication):
         Args:
             Argument namespace from argparse.
         """
+        from qutebrowser.misc.earlyinit import startup_checkpoint
         self._last_focus_object = None
 
         qt_args = qtargs.qt_args(args)
         log.init.debug("Commandline args: {}".format(sys.argv[1:]))
         log.init.debug("Parsed: {}".format(args))
         log.init.debug("Qt arguments: {}".format(qt_args[1:]))
+        startup_checkpoint("  QApplication.__init__() — super().__init__")
         super().__init__(qt_args)
+        startup_checkpoint("  QApplication.__init__() done")
 
         objects.args = args
 

@@ -195,6 +195,8 @@ class MainWindow(QWidget):
             private: Whether the window is in private browsing mode.
             parent: The parent the window should get.
         """
+        from qutebrowser.misc.earlyinit import startup_checkpoint
+        startup_checkpoint("    MainWindow.__init__() start")
         super().__init__(parent)
         # Late import to avoid a circular dependency
         # - browsertab -> hints -> webelem -> mainwindow -> bar -> browsertab
@@ -227,8 +229,10 @@ class MainWindow(QWidget):
 
         self.is_private = config.val.content.private_browsing or private
 
+        startup_checkpoint("    TabbedBrowser() constructor")
         self.tabbed_browser: tabbedbrowser.TabbedBrowser = tabbedbrowser.TabbedBrowser(
             win_id=self.win_id, private=self.is_private, parent=self)
+        startup_checkpoint("    TabbedBrowser() done")
         objreg.register('tabbed-browser', self.tabbed_browser, scope='window',
                         window=self.win_id)
         self._init_command_dispatcher()
@@ -281,6 +285,7 @@ class MainWindow(QWidget):
         self.should_raise: bool = False
 
         stylesheet.set_register(self)
+        startup_checkpoint("    MainWindow.__init__() done")
 
     def _init_geometry(self, geometry):
         """Initialize the window geometry or load it from disk."""
@@ -658,6 +663,8 @@ class MainWindow(QWidget):
         Args:
             e: The QShowEvent
         """
+        from qutebrowser.misc.earlyinit import startup_checkpoint
+        startup_checkpoint("    MainWindow.showEvent() — window mapped")
         super().showEvent(e)
         objreg.register('last-visible-main-window', self, update=True)
         if not getattr(self, '_dwm_save_registered', False):

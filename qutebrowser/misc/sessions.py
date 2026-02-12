@@ -533,11 +533,14 @@ class SessionManager(QObject):
 
     def _load_window(self, win):
         """Turn yaml data into windows."""
+        from qutebrowser.misc.earlyinit import startup_checkpoint
+        startup_checkpoint("  session._load_window() — creating window from session")
         window = mainwindow.MainWindow(geometry=win['geometry'],
                                        private=win.get('private', None))
         tabbed_browser = objreg.get('tabbed-browser', scope='window',
                                     window=window.win_id)
         tab_to_focus = None
+        startup_checkpoint(f"  session._load_window() — loading {len(win['tabs'])} tabs")
         for i, tab in enumerate(win['tabs']):
             new_tab = tabbed_browser.tabopen(background=False)
             self._load_tab(new_tab, tab)
@@ -545,10 +548,12 @@ class SessionManager(QObject):
                 tab_to_focus = i
             if new_tab.data.pinned:
                 new_tab.set_pinned(True)
+        startup_checkpoint("  session._load_window() — tabs loaded, showing window")
         if tab_to_focus is not None:
             tabbed_browser.widget.setCurrentIndex(tab_to_focus)
 
         window.show()
+        startup_checkpoint("  session._load_window() — window.show() returned")
         if win.get('active', False):
             QTimer.singleShot(0, tabbed_browser.widget.activateWindow)
 

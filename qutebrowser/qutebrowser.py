@@ -223,6 +223,7 @@ def _validate_untrusted_args(argv):
 
 
 def main():
+    earlyinit.startup_checkpoint("main() — entry point")
     _validate_untrusted_args(sys.argv)
     parser = get_argparser()
     argv = sys.argv[1:]
@@ -234,5 +235,7 @@ def main():
     earlyinit.early_init(args)
     # We do this imports late as earlyinit needs to be run first (because of
     # version checking and other early initialization)
+    earlyinit.startup_checkpoint("importing app module")
     from qutebrowser import app
+    earlyinit.startup_checkpoint("app module imported")
     return app.run(args)
