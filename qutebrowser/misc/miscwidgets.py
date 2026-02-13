@@ -12,10 +12,10 @@ from qutebrowser.qt.widgets import (QLineEdit, QWidget, QHBoxLayout, QLabel,
 from qutebrowser.qt.gui import QValidator, QPainter, QResizeEvent
 
 from qutebrowser.config import config, configfiles
-from qutebrowser.utils import utils, log, usertypes, debug, qtutils
+from qutebrowser.utils import utils, log, debug, qtutils
 from qutebrowser.misc import cmdhistory
 from qutebrowser.browser import inspector
-from qutebrowser.keyinput import keyutils, modeman
+from qutebrowser.keyinput import keyutils
 
 
 class CommandLineEdit(QLineEdit):
@@ -333,8 +333,6 @@ class InspectorSplitter(QSplitter):
 
         if main_widget.hasFocus():
             inspector_widget.setFocus()
-            modeman.enter(self._win_id, usertypes.KeyMode.insert,
-                          reason='Inspector focused', only_if_normal=True)
         elif inspector_widget.hasFocus():
             main_widget.setFocus()
 

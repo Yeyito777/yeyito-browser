@@ -1478,6 +1478,13 @@ completion.use_best_match:
   default: false
   desc: Execute the best-matching command on a partial match.
 
+## devtools
+
+devtools.auto_focus:
+  default: false
+  type: Bool
+  desc: Automatically focus the developer tools when opened.
+
 ## downloads
 
 downloads.location.directory:

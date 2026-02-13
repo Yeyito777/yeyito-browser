@@ -15,8 +15,7 @@ from qutebrowser.qt.gui import QCloseEvent
 
 from qutebrowser.browser import eventfilter
 from qutebrowser.config import configfiles, config
-from qutebrowser.utils import log, usertypes, qtutils
-from qutebrowser.keyinput import modeman
+from qutebrowser.utils import log, qtutils
 from qutebrowser.misc import miscwidgets
 
 
@@ -122,11 +121,8 @@ class AbstractWebInspector(QWidget):
 
     @pyqtSlot()
     def _on_clicked(self) -> None:
-        """Enter insert mode if a docked inspector was clicked."""
-        if (self._position != Position.window and
-                config.val.input.insert_mode.auto_enter):
-            modeman.enter(self._win_id, usertypes.KeyMode.insert,
-                          reason='Inspector clicked', only_if_normal=True)
+        """Focus the inspector when clicked."""
+        pass
 
     def set_position(self, position: Optional[Position]) -> None:
         """Set the position of the inspector.
@@ -159,6 +155,7 @@ class AbstractWebInspector(QWidget):
 
         self._widget.show()
         self.show()
+        self._focus_inspector()
 
     def toggle(self) -> None:
         """Toggle visibility of the inspector."""
@@ -166,6 +163,12 @@ class AbstractWebInspector(QWidget):
             self.hide()
         else:
             self.show()
+            self._focus_inspector()
+
+    def _focus_inspector(self) -> None:
+        """Focus the inspector widget."""
+        if self._position != Position.window and config.val.devtools.auto_focus:
+            self._widget.setFocus()
 
     def _load_state_geometry(self) -> None:
         """Load the geometry from the state file."""
