@@ -525,7 +525,9 @@ class WebEngineScroller(browsertab.AbstractScroller):
             if not handled:
                 self._repeated_key_press(key, count)
 
-        code = javascript.assemble('scroll', 'scroll_focused', px_dx, px_dy)
+        factor = config.val.scrolling.smooth_factor
+        code = javascript.assemble('scroll', 'scroll_focused', px_dx, px_dy,
+                                   factor)
         self._tab.run_js_async(code, _fallback_if_needed)
 
     @pyqtSlot(QPointF)
@@ -595,7 +597,9 @@ class WebEngineScroller(browsertab.AbstractScroller):
         self._tab.load_url(url)
 
     def delta(self, x=0, y=0):
-        self._tab.run_js_async(javascript.assemble('window', 'scrollBy', x, y))
+        factor = config.val.scrolling.smooth_factor
+        self._tab.run_js_async(
+            javascript.assemble('scroll', 'scroll_delta', x, y, factor))
 
     def delta_page(self, x=0, y=0):
         js_code = javascript.assemble('scroll', 'delta_page', x, y)

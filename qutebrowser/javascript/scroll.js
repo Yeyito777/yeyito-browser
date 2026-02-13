@@ -95,7 +95,52 @@ window._qutebrowser.scroll = (function() {
         return null;
     };
 
-    funcs.scroll_focused = (dx, dy) => {
+    // Smooth scroll accumulator — batches rapid scroll calls into one
+    // continuous animation instead of fighting independent CSS animations.
+    // All steps are truncated to whole pixels to avoid sub-pixel rendering
+    // asymmetry (floor-based pixel snapping makes up/down behave differently
+    // for fractional scrollBy values).
+    let _scrollState = null;
+    let _scrollRaf = null;
+    let _scrollFactor = 0.3;
+
+    const _animateScroll = () => {
+        const s = _scrollState;
+        if (!s) { _scrollRaf = null; return; }
+
+        let stepX = Math.trunc(s.dx * _scrollFactor);
+        let stepY = Math.trunc(s.dy * _scrollFactor);
+
+        // Minimum ±1px step while ≥1px remains, avoids large final snaps
+        if (stepX === 0 && Math.abs(s.dx) >= 1) stepX = s.dx > 0 ? 1 : -1;
+        if (stepY === 0 && Math.abs(s.dy) >= 1) stepY = s.dy > 0 ? 1 : -1;
+
+        if (stepX === 0 && stepY === 0) {
+            _scrollState = null;
+            _scrollRaf = null;
+            return;
+        }
+
+        s.target.scrollBy({left: stepX, top: stepY, behavior: "instant"});
+        s.dx -= stepX;
+        s.dy -= stepY;
+
+        _scrollRaf = requestAnimationFrame(_animateScroll);
+    };
+
+    const _accumulateScroll = (target, dx, dy, factor) => {
+        if (factor !== undefined) _scrollFactor = factor;
+        if (_scrollState && _scrollState.target === target) {
+            _scrollState.dx += dx;
+            _scrollState.dy += dy;
+        } else {
+            if (_scrollRaf) cancelAnimationFrame(_scrollRaf);
+            _scrollState = {target, dx, dy};
+            _scrollRaf = requestAnimationFrame(_animateScroll);
+        }
+    };
+
+    funcs.scroll_focused = (dx, dy, factor) => {
         const active = _deepActiveElement();
 
         if (!active || active === document.body || active === document.documentElement) {
@@ -108,8 +153,21 @@ window._qutebrowser.scroll = (function() {
             return false;
         }
 
-        scrollTarget.scrollBy(dx, dy);
+        _accumulateScroll(scrollTarget, dx, dy, factor);
         return true;
+    };
+
+    funcs.scroll_delta = (dx, dy, factor) => {
+        const active = _deepActiveElement();
+        if (active && active !== document.body &&
+            active !== document.documentElement) {
+            const scrollTarget = _findScrollable(active, dx, dy);
+            if (scrollTarget) {
+                _accumulateScroll(scrollTarget, dx, dy, factor);
+                return;
+            }
+        }
+        _accumulateScroll(window, dx, dy, factor);
     };
 
     return funcs;

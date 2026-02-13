@@ -2162,6 +2162,15 @@ scrolling.smooth:
 
     Note smooth scrolling does not work with the `:scroll-px` command.
 
+scrolling.smooth_factor:
+  type: Float
+  default: 0.3
+  desc: >-
+    Controls the speed of smooth scrolling for `:scroll-px` and `:scroll`
+    commands. This is the fraction of remaining scroll distance consumed per
+    animation frame. Higher values (e.g. 0.5) feel snappier, lower values
+    (e.g. 0.15) feel smoother. Range: 0.05 to 1.0.
+
 ## spellcheck
 
 spellcheck.languages:
