@@ -812,6 +812,14 @@ class HintManager(QObject):
 
         _t0 = time.perf_counter()
         strings = self._hint_strings(elems)
+        # Pin the page scrolling element (first) to 'j' for easy access
+        if self._context.group == 'scrollables' and strings:
+            target = 'f'
+            if target in strings:
+                idx = strings.index(target)
+                strings[0], strings[idx] = strings[idx], strings[0]
+            else:
+                strings[0] = target
         _t1 = time.perf_counter()
         log.hints.debug("hints: {}".format(', '.join(strings)))
 
@@ -831,6 +839,10 @@ class HintManager(QObject):
             label.adjustSize()
             label._move_to_elem()
             label.show()
+        # For scrollables, the page element (first label) is pinned to (0, 0).
+        # Other scrollable divs near the top can overlap it, so raise it on top.
+        if self._context.group == 'scrollables' and self._context.all_labels:
+            self._context.all_labels[0].raise_()
         _t_batch_end = time.perf_counter()
 
         keyparser = self._get_keyparser(usertypes.KeyMode.hint)

@@ -475,7 +475,16 @@ window._qutebrowser.webelem = (function() {
         }
 
         // If :qb-scrollable was specified, also find scrollable elements
+        // Track page scrolling elements so we can pin their hint to viewport top-left
+        let scrollingElems = null;
         if (includeScrollable) {
+            scrollingElems = new Set();
+            for (const [container] of containers) {
+                const doc = container.ownerDocument || container;
+                if (doc.scrollingElement) {
+                    scrollingElems.add(doc.scrollingElement);
+                }
+            }
             const scrollableElems = find_scrollable_elements(containers);
             for (const [elem, frame] of scrollableElems) {
                 if (!elemSet.has(elem)) {
@@ -490,8 +499,21 @@ window._qutebrowser.webelem = (function() {
         const useLightweight = includeCssHover || includeScrollable;
         const out = [];
         for (const [elem, frame] of elems) {
-            if (!only_visible || is_visible(elem, frame)) {
-                out.push(serialize_elem(elem, frame, useLightweight));
+            const isScrollingElem = scrollingElems && scrollingElems.has(elem);
+            // Always include page scrolling elements (their rect spans the
+            // whole document so is_visible would pass, but we pin their hint
+            // to viewport top-left regardless of scroll position)
+            if (isScrollingElem || !only_visible || is_visible(elem, frame)) {
+                const serialized = serialize_elem(elem, frame, useLightweight);
+                if (isScrollingElem) {
+                    // Pin to viewport top-left so the hint is always visible
+                    serialized.rects = [{
+                        top: 0, left: 0,
+                        bottom: window.innerHeight, right: window.innerWidth,
+                        width: window.innerWidth, height: window.innerHeight,
+                    }];
+                }
+                out.push(serialized);
             }
         }
 
