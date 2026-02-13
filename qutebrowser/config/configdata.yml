@@ -3842,7 +3842,7 @@ bindings.default:
       b: cmd-set-text -s :quickmark-load
       B: cmd-set-text -s :quickmark-load -t
       wb: cmd-set-text -s :quickmark-load -w
-      M: bookmark-add
+      M: bookmark-add --toggle
       gb: cmd-set-text -s :bookmark-load
       gB: cmd-set-text -s :bookmark-load -t
       wB: cmd-set-text -s :bookmark-load -w
