@@ -4,6 +4,9 @@
 
 """Tab runtime directory manager — exposes live tab state as plain-text files."""
 
+import getpass
+import hashlib
+import json
 import shutil
 import stat
 import datetime
@@ -124,17 +127,35 @@ class TabRuntimeManager(QObject):
 
     def _write_snapshot_script(self, tab_id):
         """Write an executable shell script that triggers a DOM snapshot."""
-        basedir = Path(standarddir.runtime()).parent
+        basedir = str(Path(standarddir.runtime()).parent)
+        runtime_dir = standarddir.runtime()
         dom_path = self._tabs_dir / tab_id / 'dom.html'
         script_path = self._tabs_dir / tab_id / 'snapshot-dom.sh'
+
+        # Compute the IPC socket path (mirrors ipc._get_socketname)
+        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
+        md5 = hashlib.md5(data_to_hash).hexdigest()
+        socket_path = Path(runtime_dir) / f'ipc-{md5}'
+
+        # Build the JSON payload (mirrors ipc.send_to_running_instance)
+        payload = json.dumps({
+            'args': [f':dom-snapshot {tab_id}'],
+            'target_arg': 'tab-silent',
+            'protocol_version': 1,
+        }) + '\n'
+
         script_path.write_text(
             '#!/bin/sh\n'
-            f'BASEDIR="{basedir}"\n'
-            f'TAB_ID="{tab_id}"\n'
+            f'SOCKET="{socket_path}"\n'
             f'DOM_FILE="{dom_path}"\n'
             '\n'
+            'if [ ! -S "$SOCKET" ]; then\n'
+            '    echo "Error: IPC socket not found (is qutebrowser running?)" >&2\n'
+            '    exit 1\n'
+            'fi\n'
+            '\n'
             'rm -f "$DOM_FILE"\n'
-            'qutebrowser --basedir "$BASEDIR" --target tab-silent ":dom-snapshot $TAB_ID"\n'
+            f"printf '%s' '{payload}' | socat - UNIX-CONNECT:\"$SOCKET\"\n"
             '\n'
             'i=0\n'
             'while [ $i -lt 5 ]; do\n'
