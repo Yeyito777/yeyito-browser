@@ -8,6 +8,30 @@ window._qutebrowser.scroll = (function() {
     const funcs = {};
 
     funcs.to_perc = (x, y) => {
+        const dx = x !== undefined ? 1 : 0;
+        const dy = y !== undefined ? 1 : 0;
+
+        // Try focused scrollable element first
+        const active = _deepActiveElement();
+        if (active && active !== document.body &&
+            active !== document.documentElement) {
+            const scrollTarget = _findScrollable(active, dx, dy);
+            if (scrollTarget) {
+                if (x !== undefined) {
+                    scrollTarget.scrollLeft =
+                        (scrollTarget.scrollWidth - scrollTarget.clientWidth) /
+                        100 * x;
+                }
+                if (y !== undefined) {
+                    scrollTarget.scrollTop =
+                        (scrollTarget.scrollHeight - scrollTarget.clientHeight) /
+                        100 * y;
+                }
+                return;
+            }
+        }
+
+        // Fall back to window scroll
         let x_px = window.scrollX;
         let y_px = window.scrollY;
 
@@ -31,21 +55,6 @@ window._qutebrowser.scroll = (function() {
         if (y !== undefined) {
             y_px = (height - window.innerHeight) / 100 * y;
         }
-
-        /*
-        console.log(JSON.stringify({
-            "x": x,
-            "window.scrollX": window.scrollX,
-            "window.innerWidth": window.innerWidth,
-            "elem.scrollWidth": document.documentElement.scrollWidth,
-            "x_px": x_px,
-            "y": y,
-            "window.scrollY": window.scrollY,
-            "window.innerHeight": window.innerHeight,
-            "elem.scrollHeight": document.documentElement.scrollHeight,
-            "y_px": y_px,
-        }));
-        */
 
         window.scroll(x_px, y_px);
     };
