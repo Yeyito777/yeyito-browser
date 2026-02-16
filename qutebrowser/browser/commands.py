@@ -1965,3 +1965,31 @@ class CommandDispatcher:
 
         raise cmdutils.CommandError(
             "No tab with ID {} found".format(tab_id))
+
+    @cmdutils.register(instance='command-dispatcher', scope='window')
+    def grant_user_activation(self, tab_id: int):
+        """Grant user activation to a tab's main frame.
+
+        This allows programmatic calls like video.play() to succeed
+        even when content.autoplay is disabled.
+
+        Args:
+            tab_id: The tab ID to grant user activation to.
+        """
+        for tab in self._tabbed_browser.widgets():
+            if tab.tab_id == tab_id:
+                tab._widget.page().notifyUserActivation()
+                return
+
+        for win_id in objreg.window_registry:
+            if win_id == self._win_id:
+                continue
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            for tab in tabbed_browser.widgets():
+                if tab.tab_id == tab_id:
+                    tab._widget.page().notifyUserActivation()
+                    return
+
+        raise cmdutils.CommandError(
+            "No tab with ID {} found".format(tab_id))

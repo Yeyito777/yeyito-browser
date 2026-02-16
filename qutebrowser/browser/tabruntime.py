@@ -13,6 +13,7 @@ import datetime
 from pathlib import Path
 
 from qutebrowser.qt.core import QObject, QUrl
+from qutebrowser.qt import sip
 
 from qutebrowser.utils import standarddir, usertypes
 
@@ -84,6 +85,14 @@ class TabRuntimeManager(QObject):
                 self._append_console_log(tid, level, source, line, msg))
         tab.load_started.connect(
             lambda tid=tab_id: self._truncate_console_log(tid))
+
+        # Auto-resume YouTube playback after session restore.
+        # The greasemonkey script emits console.log('[yt-resume-ready]') when
+        # seek has settled and the video was playing before shutdown.  We watch
+        # for that signal and immediately grant user activation + play().
+        tab.console_message.connect(
+            lambda level, source, line, msg, t=tab:
+                self._on_youtube_resume_signal(t, msg))
 
         self._update_indices()
 
@@ -383,6 +392,25 @@ class TabRuntimeManager(QObject):
         tab.run_js_async(
             'document.documentElement.outerHTML', callback=_on_result)
         return True
+
+    def _on_youtube_resume_signal(self, tab, msg):
+        """Grant user activation and play when greasemonkey signals seek done.
+
+        The greasemonkey script emits console.log('[yt-resume-ready]') after
+        the seek has settled and the pre-restore state was playing.  This fires
+        immediately with no fixed delay.
+        """
+        if '[yt-resume-ready]' not in msg:
+            return
+        if getattr(tab, '_yt_resumed', False):
+            return
+        if sip.isdeleted(tab._widget):
+            return
+        tab._yt_resumed = True
+        tab._widget.page().notifyUserActivation()
+        tab.run_js_async(
+            "document.querySelector('video')?.play()",
+            world=usertypes.JsWorld.main)
 
     def _on_shutdown(self):
         self._tab_data.clear()
