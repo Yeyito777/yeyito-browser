@@ -1938,3 +1938,30 @@ class CommandDispatcher:
 
         raise cmdutils.CommandError(
             "No tab with ID {} found".format(tab_id))
+
+    @cmdutils.register(instance='command-dispatcher', scope='window',
+                       maxsplit=1, no_cmd_split=True)
+    def js_eval_tab(self, tab_id: int, js_code: str):
+        """Evaluate JavaScript in a tab and write result to console-result.
+
+        Args:
+            tab_id: The tab ID to evaluate JS in.
+            js_code: The JavaScript expression to evaluate.
+        """
+        tab_id_str = str(tab_id)
+
+        # Try current window first
+        if self._tabbed_browser.tab_runtime.js_eval_tab(tab_id_str, js_code):
+            return
+
+        # Search other windows
+        for win_id in objreg.window_registry:
+            if win_id == self._win_id:
+                continue
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            if tabbed_browser.tab_runtime.js_eval_tab(tab_id_str, js_code):
+                return
+
+        raise cmdutils.CommandError(
+            "No tab with ID {} found".format(tab_id))

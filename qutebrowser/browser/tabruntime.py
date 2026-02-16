@@ -56,6 +56,7 @@ class TabRuntimeManager(QObject):
         (self._tabs_dir / tab_id).mkdir(exist_ok=True)
         self._write_tab(tab_id)
         self._write_snapshot_script(tab_id)
+        self._write_console_script(tab_id)
 
         # Per-tab signal connections
         tab.url_changed.connect(
@@ -78,6 +79,11 @@ class TabRuntimeManager(QObject):
                 tid, 'audio', self._audio_state(t)))
         tab.shutting_down.connect(
             lambda tid=tab_id: self._on_tab_removed(tid))
+        tab.console_message.connect(
+            lambda level, source, line, msg, tid=tab_id:
+                self._append_console_log(tid, level, source, line, msg))
+        tab.load_started.connect(
+            lambda tid=tab_id: self._truncate_console_log(tid))
 
         self._update_indices()
 
@@ -124,6 +130,156 @@ class TabRuntimeManager(QObject):
         if tab.audio.is_recently_audible():
             return 'unmuted'
         return 'none'
+
+    def _append_console_log(self, tab_id, level, source, line, msg):
+        """Append a console message to the tab's console.log file."""
+        if tab_id not in self._tab_data:
+            return
+        log_path = self._tabs_dir / tab_id / 'console.log'
+        timestamp = datetime.datetime.now().isoformat()
+        entry = f'[{timestamp}] {level.name.upper()} {source}:{line} — {msg}\n'
+        try:
+            with open(log_path, 'a') as f:
+                f.write(entry)
+        except FileNotFoundError:
+            pass
+
+    def _truncate_console_log(self, tab_id):
+        """Clear the console.log file on navigation."""
+        if tab_id not in self._tab_data:
+            return
+        log_path = self._tabs_dir / tab_id / 'console.log'
+        try:
+            log_path.write_text('')
+        except FileNotFoundError:
+            pass
+
+    def js_eval_tab(self, tab_id_str, js_code):
+        """Evaluate JS in a tab and write result to console-result.
+
+        Uses three sequential run_js_async calls (processed in order by
+        QtWebEngine) to avoid eval() which is blocked by Trusted Types CSP:
+        1. Install console interceptors on window.__qb_console
+        2. Run the user's code directly (return value via callback)
+        3. Collect captured output, restore originals, write result file
+        """
+        tab = None
+        for t in self._tabbed_browser.widgets():
+            if str(t.tab_id) == tab_id_str:
+                tab = t
+                break
+        if tab is None:
+            return False
+
+        result_path = self._tabs_dir / tab_id_str / 'console-result'
+
+        setup_js = (
+            '(function(){'
+            'window.__qb_c={out:[],'
+            'oL:console.log,oW:console.warn,oE:console.error};'
+            'console.log=function(){'
+            'window.__qb_c.out.push(Array.from(arguments).join(" "));'
+            'window.__qb_c.oL.apply(console,arguments);};'
+            'console.warn=function(){'
+            'window.__qb_c.out.push("[warn] "+Array.from(arguments).join(" "));'
+            'window.__qb_c.oW.apply(console,arguments);};'
+            'console.error=function(){'
+            'window.__qb_c.out.push("[error] "+Array.from(arguments).join(" "));'
+            'window.__qb_c.oE.apply(console,arguments);};'
+            '})()'
+        )
+
+        collect_js = (
+            '(function(){'
+            'var c=window.__qb_c;if(!c)return"";'
+            'console.log=c.oL;console.warn=c.oW;console.error=c.oE;'
+            'var out=c.out.join("\\n");delete window.__qb_c;return out;'
+            '})()'
+        )
+
+        def _on_user_result(result):
+            def _on_collect(output):
+                try:
+                    parts = []
+                    if output:
+                        parts.append(str(output))
+                    if result is not None:
+                        parts.append(f'=> {result}')
+                    text = '\n'.join(parts) if parts else 'undefined'
+                    result_path.write_text(text + '\n')
+                except FileNotFoundError:
+                    pass
+
+            tab.run_js_async(
+                collect_js, callback=_on_collect,
+                world=usertypes.JsWorld.main)
+
+        # 1. Install interceptors
+        tab.run_js_async(setup_js, world=usertypes.JsWorld.main)
+        # 2. Run user code directly (no eval — not subject to CSP)
+        tab.run_js_async(
+            js_code, callback=_on_user_result,
+            world=usertypes.JsWorld.main)
+        return True
+
+    def _write_console_script(self, tab_id):
+        """Write an executable shell script that evals JS in a tab."""
+        basedir = str(Path(standarddir.runtime()).parent)
+        runtime_dir = standarddir.runtime()
+        result_path = self._tabs_dir / tab_id / 'console-result'
+        script_path = self._tabs_dir / tab_id / 'console.sh'
+
+        # Compute the IPC socket path (mirrors ipc._get_socketname)
+        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
+        md5 = hashlib.md5(data_to_hash).hexdigest()
+        socket_path = Path(runtime_dir) / f'ipc-{md5}'
+
+        script_path.write_text(
+            '#!/bin/sh\n'
+            'if [ -z "$1" ]; then\n'
+            '    echo "Usage: console.sh <js-expression>" >&2\n'
+            '    exit 1\n'
+            'fi\n'
+            '\n'
+            f'SOCKET="{socket_path}"\n'
+            f'RESULT_FILE="{result_path}"\n'
+            f'TAB_ID="{tab_id}"\n'
+            'MAX_CHARS=3000\n'
+            '\n'
+            'if [ ! -S "$SOCKET" ]; then\n'
+            '    echo "Error: IPC socket not found (is qutebrowser running?)" >&2\n'
+            '    exit 1\n'
+            'fi\n'
+            '\n'
+            'rm -f "$RESULT_FILE"\n'
+            '\n'
+            '# Escape backslashes and double quotes for JSON embedding\n'
+            'JS_ESC=$(printf \'%s\' "$1" | sed \'s/\\\\/\\\\\\\\/g; s/"/\\\\"/g\')\n'
+            'PAYLOAD=$(printf \'{"args":[":js-eval-tab %s %s"],'
+            '"target_arg":"tab-silent","protocol_version":1}\''
+            ' "$TAB_ID" "$JS_ESC")\n'
+            'printf \'%s\\n\' "$PAYLOAD" | socat - UNIX-CONNECT:"$SOCKET"\n'
+            '\n'
+            'i=0\n'
+            'while [ $i -lt 10 ]; do\n'
+            '    sleep 0.5\n'
+            '    if [ -f "$RESULT_FILE" ]; then\n'
+            '        CHAR_COUNT=$(wc -m < "$RESULT_FILE")\n'
+            '        if [ "$CHAR_COUNT" -gt "$MAX_CHARS" ]; then\n'
+            '            head -c "$MAX_CHARS" "$RESULT_FILE"\n'
+            '            printf "\\n...\\n(truncated — full output in console.log)\\n"\n'
+            '        else\n'
+            '            cat "$RESULT_FILE"\n'
+            '        fi\n'
+            '        exit 0\n'
+            '    fi\n'
+            '    i=$((i + 1))\n'
+            'done\n'
+            '\n'
+            'echo "Error: JS eval timed out" >&2\n'
+            'exit 1\n'
+        )
+        script_path.chmod(script_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     def _write_snapshot_script(self, tab_id):
         """Write an executable shell script that triggers a DOM snapshot."""

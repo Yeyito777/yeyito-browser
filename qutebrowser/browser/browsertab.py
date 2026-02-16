@@ -1012,6 +1012,8 @@ class AbstractTab(QWidget):
     # arg 0: A TerminationStatus member.
     # arg 1: The exit code.
     renderer_process_terminated = pyqtSignal(TerminationStatus, int)
+    # Signal emitted on JS console messages (level, source, line, message)
+    console_message = pyqtSignal(usertypes.JsLogLevel, str, int, str)
 
     # Hosts for which a certificate error happened. Shared between all tabs.
     #

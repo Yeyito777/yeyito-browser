@@ -204,6 +204,7 @@ class WebEnginePage(QWebEnginePage):
     certificate_error = pyqtSignal(certificateerror.CertificateErrorWrapper)
     shutting_down = pyqtSignal()
     navigation_request = pyqtSignal(usertypes.NavigationRequest)
+    console_message = pyqtSignal(usertypes.JsLogLevel, str, int, str)
 
     _JS_LOG_LEVEL_MAPPING = {
         QWebEnginePage.JavaScriptConsoleMessageLevel.InfoMessageLevel:
@@ -296,7 +297,9 @@ class WebEnginePage(QWebEnginePage):
 
     def javaScriptConsoleMessage(self, level, msg, line, source):
         """Log javascript messages to qutebrowser's log."""
-        shared.javascript_log_message(self._JS_LOG_LEVEL_MAPPING[level], source, line, msg)
+        level_mapped = self._JS_LOG_LEVEL_MAPPING[level]
+        shared.javascript_log_message(level_mapped, source, line, msg)
+        self.console_message.emit(level_mapped, source, line, msg)
 
     def acceptNavigationRequest(self,
                                 url: QUrl,
