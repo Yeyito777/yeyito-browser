@@ -149,6 +149,20 @@ window._qutebrowser.scroll = (function() {
         }
     };
 
+    funcs.get_scroll_target_center = (dx, dy) => {
+        const active = _deepActiveElement();
+        if (active && active !== document.body &&
+            active !== document.documentElement) {
+            const scrollTarget = _findScrollable(active, dx, dy);
+            if (scrollTarget) {
+                const rect = scrollTarget.getBoundingClientRect();
+                return [Math.round(rect.left + rect.width / 2),
+                        Math.round(rect.top + rect.height / 2)];
+            }
+        }
+        return null;
+    };
+
     funcs.scroll_focused = (dx, dy, factor) => {
         const active = _deepActiveElement();
 

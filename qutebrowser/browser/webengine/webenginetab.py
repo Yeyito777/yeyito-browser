@@ -582,33 +582,38 @@ class WebEngineScroller(browsertab.AbstractScroller):
         url.setFragment(name)
         self._tab.load_url(url)
 
-    def delta(self, x=0, y=0):
+    def _smooth_scroll(self, dx, dy):
         factor = config.val.scrolling.smooth_factor
-        self._widget.page().smoothScrollBy(x, y, factor)
+        js_code = javascript.assemble('scroll', 'get_scroll_target_center', dx, dy)
+        self._tab.run_js_async(
+            js_code,
+            callback=functools.partial(self._do_smooth_scroll, dx, dy, factor))
+
+    def _do_smooth_scroll(self, dx, dy, factor, js_result):
+        if isinstance(js_result, list) and len(js_result) == 2:
+            self._widget.page().smoothScrollBy(
+                dx, dy, factor, int(js_result[0]), int(js_result[1]))
+        else:
+            self._widget.page().smoothScrollBy(dx, dy, factor)
+
+    def delta(self, x=0, y=0):
+        self._smooth_scroll(x, y)
 
     def delta_page(self, x=0, y=0):
         js_code = javascript.assemble('scroll', 'delta_page', x, y)
         self._tab.run_js_async(js_code)
 
     def up(self, count=1):
-        px = count * self._ARROW_SCROLL_PX
-        factor = config.val.scrolling.smooth_factor
-        self._widget.page().smoothScrollBy(0, -px, factor)
+        self._smooth_scroll(0, -(count * self._ARROW_SCROLL_PX))
 
     def down(self, count=1):
-        px = count * self._ARROW_SCROLL_PX
-        factor = config.val.scrolling.smooth_factor
-        self._widget.page().smoothScrollBy(0, px, factor)
+        self._smooth_scroll(0, count * self._ARROW_SCROLL_PX)
 
     def left(self, count=1):
-        px = count * self._ARROW_SCROLL_PX
-        factor = config.val.scrolling.smooth_factor
-        self._widget.page().smoothScrollBy(-px, 0, factor)
+        self._smooth_scroll(-(count * self._ARROW_SCROLL_PX), 0)
 
     def right(self, count=1):
-        px = count * self._ARROW_SCROLL_PX
-        factor = config.val.scrolling.smooth_factor
-        self._widget.page().smoothScrollBy(px, 0, factor)
+        self._smooth_scroll(count * self._ARROW_SCROLL_PX, 0)
 
     def top(self):
         self._tab.fake_key_press(Qt.Key.Key_Home)
