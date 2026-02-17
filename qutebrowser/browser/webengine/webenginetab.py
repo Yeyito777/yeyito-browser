@@ -516,20 +516,6 @@ class WebEngineScroller(browsertab.AbstractScroller):
         for _ in range(min(count, 1000)):
             self._tab.fake_key_press(key, modifier)
 
-    def _scroll_with_js_or_key(self, key, dx: int, dy: int, count: int) -> None:
-        """Try to scroll the focused container via JS, otherwise fall back."""
-        px_dx = dx * count * self._ARROW_SCROLL_PX
-        px_dy = dy * count * self._ARROW_SCROLL_PX
-
-        def _fallback_if_needed(handled: bool) -> None:
-            if not handled:
-                self._repeated_key_press(key, count)
-
-        factor = config.val.scrolling.smooth_factor
-        code = javascript.assemble('scroll', 'scroll_focused', px_dx, px_dy,
-                                   factor)
-        self._tab.run_js_async(code, _fallback_if_needed)
-
     @pyqtSlot(QPointF)
     def _update_pos(self, pos):
         """Update the scroll position attributes when it changed."""
@@ -597,25 +583,38 @@ class WebEngineScroller(browsertab.AbstractScroller):
         self._tab.load_url(url)
 
     def delta(self, x=0, y=0):
+        import sys
         factor = config.val.scrolling.smooth_factor
-        self._tab.run_js_async(
-            javascript.assemble('scroll', 'scroll_delta', x, y, factor))
+        print(f"[SCROLL-DEBUG] delta called: x={x}, y={y}, factor={factor}", file=sys.stderr, flush=True)
+        try:
+            self._widget.page().smoothScrollBy(x, y, factor)
+            print(f"[SCROLL-DEBUG] smoothScrollBy call succeeded", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[SCROLL-DEBUG] smoothScrollBy FAILED: {e}", file=sys.stderr, flush=True)
 
     def delta_page(self, x=0, y=0):
         js_code = javascript.assemble('scroll', 'delta_page', x, y)
         self._tab.run_js_async(js_code)
 
     def up(self, count=1):
-        self._scroll_with_js_or_key(Qt.Key.Key_Up, 0, -1, count)
+        px = count * self._ARROW_SCROLL_PX
+        factor = config.val.scrolling.smooth_factor
+        self._widget.page().smoothScrollBy(0, -px, factor)
 
     def down(self, count=1):
-        self._scroll_with_js_or_key(Qt.Key.Key_Down, 0, 1, count)
+        px = count * self._ARROW_SCROLL_PX
+        factor = config.val.scrolling.smooth_factor
+        self._widget.page().smoothScrollBy(0, px, factor)
 
     def left(self, count=1):
-        self._scroll_with_js_or_key(Qt.Key.Key_Left, -1, 0, count)
+        px = count * self._ARROW_SCROLL_PX
+        factor = config.val.scrolling.smooth_factor
+        self._widget.page().smoothScrollBy(-px, 0, factor)
 
     def right(self, count=1):
-        self._scroll_with_js_or_key(Qt.Key.Key_Right, 1, 0, count)
+        px = count * self._ARROW_SCROLL_PX
+        factor = config.val.scrolling.smooth_factor
+        self._widget.page().smoothScrollBy(px, 0, factor)
 
     def top(self):
         self._tab.fake_key_press(Qt.Key.Key_Home)
