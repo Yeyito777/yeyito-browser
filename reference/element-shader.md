@@ -76,7 +76,7 @@ void ApplyElementShader(StyleResolverState& state) {
   }
 
   // If small + chromatic (chroma > 25): darken via HSL (lightness <= 0.15, saturation >= 0.50)
-  // Otherwise: #00050f + original alpha (or #090d35 for :hover/:active with visible bg)
+  // Otherwise: #00050f + original alpha (or #090d35 for highlight-state elements)
   if (!force_dark && bg_chroma > 25) {
     double h, s, l;
     bg_color.GetHSL(h, s, l);
@@ -91,10 +91,52 @@ void ApplyElementShader(StyleResolverState& state) {
     builder.SetInternalVisitedBackgroundColor(StyleColor(darkened));
   } else {
     Color target_with_alpha(0x00, 0x05, 0x0f);
-    // :hover/:active elements with a CSS-specified bg get #090d35 for feedback
-    if (!force_dark && !bg_color.IsFullyTransparent() &&
-        (element.IsHovered() || element.IsActive())) {
-      target_with_alpha = Color(0x09, 0x0d, 0x35);
+    // Brightness-based highlight detection: elements with bg brightness
+    // in 0.5–0.95 range whose parent bg is transparent or post-shader dark
+    // get #090d35 (covers :hover, :active, and class-based states like
+    // .page-nav-active). Large elements are excluded via area check (layout
+    // object from previous frame) or CSS dimension estimation (first render).
+    if (!force_dark && !bg_color.IsFullyTransparent()) {
+      bool too_large = false;
+      LayoutObject* lo = element.GetLayoutObject();
+      if (lo && lo->IsBox()) {
+        auto* box = To<LayoutBox>(lo);
+        if (box->OffsetWidth().ToFloat() * box->OffsetHeight().ToFloat()
+            > kMaxChromaticBgArea)
+          too_large = true;
+      } else {
+        // No layout object — estimate from CSS width/height + viewport
+        const auto& viewport =
+            state.GetDocument().GetStyleEngine().GetViewportSize();
+        const Length& css_w = builder.Width();
+        const Length& css_h = builder.Height();
+        float est_w = 0, est_h = 0;
+        if (css_w.IsFixed()) est_w = css_w.Pixels();
+        else if (css_w.IsPercent())
+          est_w = css_w.Percent() * viewport.Width() / 100.0;
+        else if (css_w.IsAuto()) {
+          EDisplay d = builder.Display();
+          if (d == EDisplay::kBlock || d == EDisplay::kFlex ||
+              d == EDisplay::kGrid || d == EDisplay::kTable)
+            est_w = viewport.Width();
+        }
+        if (css_h.IsFixed()) est_h = css_h.Pixels();
+        else if (css_h.IsPercent())
+          est_h = css_h.Percent() * viewport.Height() / 100.0;
+        if (est_w * est_h > kMaxChromaticBgArea) too_large = true;
+      }
+      float bg_brightness = (bg_r + bg_g + bg_b) / (3.0f * 255.0f);
+      if (!too_large && bg_brightness > 0.5f && bg_brightness < 0.95f) {
+        const ComputedStyle* parent_style = state.ParentStyle();
+        if (parent_style) {
+          Color parent_bg = parent_style->VisitedDependentColor(
+              GetCSSPropertyBackgroundColor());
+          if (parent_bg.IsFullyTransparent() ||
+              (parent_bg.Red() < 40 && parent_bg.Green() < 40 &&
+               parent_bg.Blue() < 40))
+            target_with_alpha = Color(0x09, 0x0d, 0x35);
+        }
+      }
     }
     target_with_alpha.SetAlpha(bg_color.Alpha());
     builder.SetBackgroundColor(StyleColor(target_with_alpha));
@@ -270,6 +312,26 @@ if (layout_obj && layout_obj->IsBox()) {
   float w = layout_box->OffsetWidth().ToFloat();
   float h = layout_box->OffsetHeight().ToFloat();
 }
+
+// CSS dimensions from the style being built (always available)
+const Length& css_w = builder.Width();   // public on ComputedStyleBase
+const Length& css_h = builder.Height();
+// Length methods: IsFixed(), IsPercent(), IsAuto(), Pixels(), Percent()
+
+// Viewport size (always available during style resolution)
+const auto& viewport = state.GetDocument().GetStyleEngine().GetViewportSize();
+double vw = viewport.Width();   // pixels
+double vh = viewport.Height();
+
+// Display type
+EDisplay disp = builder.Display();
+// EDisplay::kBlock, kFlex, kGrid, kTable, kInline, etc.
+
+// Parent style (post-shader for already-resolved parents)
+const ComputedStyle* parent_style = state.ParentStyle();
+// Use VisitedDependentColor() for public color access:
+Color parent_bg = parent_style->VisitedDependentColor(
+    GetCSSPropertyBackgroundColor());
 ```
 
 ## Build & Test
@@ -306,13 +368,15 @@ vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolv
 | `ui/native_theme/native_theme.cc` | Static member definition for shader flag |
 | `ui/native_theme/native_theme_aura.cc` | Native scrollbar painting (Aura/overlay), conditional on shader flag |
 | `ui/native_theme/native_theme_fluent.cc` | Native scrollbar painting (Fluent), conditional on shader flag |
+| `css/style_engine.h` | `GetViewportSize()` for viewport dimensions during style resolution |
+| `platform/geometry/length.h` | `Length` class: `IsFixed()`, `IsPercent()`, `IsAuto()`, `Pixels()`, `Percent()` |
 | `compositor_animations.cc` | Blocks compositor bg-color animation when shader enabled |
 
 ## Compositor Background-Color Fix
 
 Composited `background-color` animations bypass the shader (compositor thread interpolates directly from CSS keyframe values). To prevent this, `CheckCanStartEffectOnCompositor()` in `compositor_animations.cc` blocks compositor promotion for `background-color` when `GetElementShaderEnabled()` is true, forcing the animation to run on the main thread where the shader transforms every frame.
 
-Additionally, the shader uses `#090d35` (instead of `#00050f`) for `:hover`/`:active` small elements with non-transparent non-chromatic backgrounds, providing visual hover feedback. Detection uses `element.IsHovered() || element.IsActive()`. Note: this only detects CSS pseudo-class states, not class-based selection (e.g., `.active`, `.selected`).
+Additionally, the shader uses `#090d35` (instead of `#00050f`) for highlight-state elements — detected via brightness-based comparison against parent background. This catches `:hover`, `:active`, and class-based selection states (e.g., `.page-nav-active`). Large elements are excluded via layout area check or CSS dimension estimation against viewport.
 
 ## Visited Link Color Fix
 
@@ -403,7 +467,9 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 
 12. ~~**Build custom PyQt6-WebEngine bindings**~~ - DONE: PyQt6-WebEngine source is forked as a submodule (`pyqt6-webengine/`), with `ElementShaderEnabled` added to `qwebenginesettings.sip`. Phase 4 of `install.sh` builds and installs the custom bindings using `sip-install` against our custom Qt headers. The venv's PyQt6 module now loads our custom `.abi3.so` which correctly marshals the enum value to C++.
 
-13. ~~**Compositor bg-color bypass**~~ - DONE: Composited `background-color` animations bypass the shader (compositor thread interpolates directly). Fixed by blocking compositor promotion for bg-color when shader is enabled (`compositor_animations.cc`). `:hover`/`:active` small elements with non-chromatic backgrounds get `#090d35` instead of `#00050f` for visual hover feedback.
+13. ~~**Compositor bg-color bypass**~~ - DONE: Composited `background-color` animations bypass the shader (compositor thread interpolates directly). Fixed by blocking compositor promotion for bg-color when shader is enabled (`compositor_animations.cc`).
+
+15. ~~**Highlight-state detection (#090d35)**~~ - DONE: Non-chromatic elements with bg brightness 0.5–0.95, whose parent bg is transparent or post-shader dark, get `#090d35` instead of `#00050f`. This catches `:hover`, `:active`, and class-based selection states (e.g., `.page-nav-active`). Large elements are excluded via two-tier size check: layout object area (for restyled elements) or CSS dimension estimation against viewport (for first render, handles fixed px, percentages, and auto width on block/flex/grid elements).
 
 14. ~~**Visited link colors**~~ - DONE: Visited links use `VisitedDependentColor()` at paint time which reads `InternalVisited*` properties, bypassing the shader's color overrides. Fixed by setting `InsideLink` to `kNotInsideLink` at the end of the shader, forcing paint to use unvisited (shader-transformed) colors.
 
