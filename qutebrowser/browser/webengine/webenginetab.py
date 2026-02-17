@@ -583,14 +583,8 @@ class WebEngineScroller(browsertab.AbstractScroller):
         self._tab.load_url(url)
 
     def delta(self, x=0, y=0):
-        import sys
         factor = config.val.scrolling.smooth_factor
-        print(f"[SCROLL-DEBUG] delta called: x={x}, y={y}, factor={factor}", file=sys.stderr, flush=True)
-        try:
-            self._widget.page().smoothScrollBy(x, y, factor)
-            print(f"[SCROLL-DEBUG] smoothScrollBy call succeeded", file=sys.stderr, flush=True)
-        except Exception as e:
-            print(f"[SCROLL-DEBUG] smoothScrollBy FAILED: {e}", file=sys.stderr, flush=True)
+        self._widget.page().smoothScrollBy(x, y, factor)
 
     def delta_page(self, x=0, y=0):
         js_code = javascript.assemble('scroll', 'delta_page', x, y)
