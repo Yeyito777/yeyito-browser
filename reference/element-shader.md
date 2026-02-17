@@ -76,7 +76,7 @@ void ApplyElementShader(StyleResolverState& state) {
   }
 
   // If small + chromatic (chroma > 25): darken via HSL (lightness <= 0.15, saturation >= 0.50)
-  // Otherwise: #00050f + original alpha
+  // Otherwise: #00050f + original alpha (or #090d35 for :hover/:active with visible bg)
   if (!force_dark && bg_chroma > 25) {
     double h, s, l;
     bg_color.GetHSL(h, s, l);
@@ -88,11 +88,23 @@ void ApplyElementShader(StyleResolverState& state) {
         static_cast<float>(l),
         bg_color.Alpha());  // Alpha preserved
     builder.SetBackgroundColor(StyleColor(darkened));
+    builder.SetInternalVisitedBackgroundColor(StyleColor(darkened));
   } else {
     Color target_with_alpha(0x00, 0x05, 0x0f);
+    // :hover/:active elements with a CSS-specified bg get #090d35 for feedback
+    if (!force_dark && !bg_color.IsFullyTransparent() &&
+        (element.IsHovered() || element.IsActive())) {
+      target_with_alpha = Color(0x09, 0x0d, 0x35);
+    }
     target_with_alpha.SetAlpha(bg_color.Alpha());
     builder.SetBackgroundColor(StyleColor(target_with_alpha));
+    builder.SetInternalVisitedBackgroundColor(StyleColor(target_with_alpha));
   }
+
+  // Force visited links to use unvisited (shader-transformed) colors.
+  // Without this, VisitedDependentColor() reads InternalVisited* properties
+  // which may not reflect our shader overrides in all pipeline paths.
+  builder.SetInsideLink(EInsideLink::kNotInsideLink);
 }
 // =============================================================================
 ```
@@ -294,6 +306,21 @@ vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolv
 | `ui/native_theme/native_theme.cc` | Static member definition for shader flag |
 | `ui/native_theme/native_theme_aura.cc` | Native scrollbar painting (Aura/overlay), conditional on shader flag |
 | `ui/native_theme/native_theme_fluent.cc` | Native scrollbar painting (Fluent), conditional on shader flag |
+| `compositor_animations.cc` | Blocks compositor bg-color animation when shader enabled |
+
+## Compositor Background-Color Fix
+
+Composited `background-color` animations bypass the shader (compositor thread interpolates directly from CSS keyframe values). To prevent this, `CheckCanStartEffectOnCompositor()` in `compositor_animations.cc` blocks compositor promotion for `background-color` when `GetElementShaderEnabled()` is true, forcing the animation to run on the main thread where the shader transforms every frame.
+
+Additionally, the shader uses `#090d35` (instead of `#00050f`) for `:hover`/`:active` small elements with non-transparent non-chromatic backgrounds, providing visual hover feedback. Detection uses `element.IsHovered() || element.IsActive()`. Note: this only detects CSS pseudo-class states, not class-based selection (e.g., `.active`, `.selected`).
+
+## Visited Link Color Fix
+
+Blink uses `VisitedDependentColor()` at paint time to pick between unvisited and visited color variants for links. The shader transforms the unvisited `BackgroundColor` (confirmed by `getComputedStyle`), but the visited variant (`InternalVisitedBackgroundColor`) was painted directly from the CSS cascade, bypassing the shader's override.
+
+**Root cause**: `SetInternalVisitedBackgroundColor()` on the builder does not reliably persist through all pipeline paths (base computed style cache, transition system, etc.).
+
+**Fix**: Instead of trying to set every `InternalVisited*` property, the shader forces `builder.SetInsideLink(EInsideLink::kNotInsideLink)` at the end of `ApplyElementShader()`. This tells `VisitedDependentColor()` to always return the unvisited color — which IS properly shader-transformed. This effectively disables visited-link color differentiation for shader-processed elements, which is correct since the shader overrides all colors anyway.
 
 ## Gradient Handling
 
@@ -375,6 +402,10 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 11. ~~**Drop shadow recoloring**~~ - DONE: Reads `BoxShadow()` from the style builder, recolors each shadow entry to `#090d35` while preserving original alpha and opacity. Shadow geometry (offsets, blur, spread, inset) is untouched.
 
 12. ~~**Build custom PyQt6-WebEngine bindings**~~ - DONE: PyQt6-WebEngine source is forked as a submodule (`pyqt6-webengine/`), with `ElementShaderEnabled` added to `qwebenginesettings.sip`. Phase 4 of `install.sh` builds and installs the custom bindings using `sip-install` against our custom Qt headers. The venv's PyQt6 module now loads our custom `.abi3.so` which correctly marshals the enum value to C++.
+
+13. ~~**Compositor bg-color bypass**~~ - DONE: Composited `background-color` animations bypass the shader (compositor thread interpolates directly). Fixed by blocking compositor promotion for bg-color when shader is enabled (`compositor_animations.cc`). `:hover`/`:active` small elements with non-chromatic backgrounds get `#090d35` instead of `#00050f` for visual hover feedback.
+
+14. ~~**Visited link colors**~~ - DONE: Visited links use `VisitedDependentColor()` at paint time which reads `InternalVisited*` properties, bypassing the shader's color overrides. Fixed by setting `InsideLink` to `kNotInsideLink` at the end of the shader, forcing paint to use unvisited (shader-transformed) colors.
 
 ## Runtime Toggle (shader-on / shader-off)
 
