@@ -291,7 +291,10 @@ class IPCServer(QObject):
 
     def _handle_invalid_data(self):
         """Handle invalid data we got from a QLocalSocket."""
-        assert self._socket is not None
+        if self._socket is None:
+            log.ipc.warning("Ignoring invalid IPC data (socket already disconnected).")
+            self.got_invalid_data.emit()
+            return
         log.ipc.error("Ignoring invalid IPC data from socket 0x{:x}.".format(
             id(self._socket)))
         self.got_invalid_data.emit()

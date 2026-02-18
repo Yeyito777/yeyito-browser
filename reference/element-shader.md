@@ -51,6 +51,8 @@ void ApplyElementShader(StyleResolverState& state) {
 
   // --- Border recoloring (unchanged) ---
   // --- Border radius removal (unchanged) ---
+  // --- SVG/CSS mask removal (unchanged) ---
+  // --- Clip-path removal (unchanged) ---
   // --- Gradient replacement (unchanged) ---
   // --- Drop shadow recoloring: #090d35, alpha preserved ---
 
@@ -452,6 +454,8 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 4. ~~**Border recoloring**~~ - DONE: Recolors all borders to #1d9bf0. Alpha preservation is optional via `kPreserveBorderAlpha` (currently disabled).
 
 5. ~~**Border radius removal**~~ - DONE: Sets border-radius to 0 on all elements.
+
+16. ~~**SVG mask and clip-path removal**~~ - DONE: Sites like Discord wrap images in SVG `<foreignObject>` elements with `<mask>` definitions (circles, squircles) to round avatars and server icons — bypassing CSS `border-radius` entirely. The shader now clears all mask layers via `AccessMaskLayers().ClearImage()` and removes clip-paths via `SetClipPath(nullptr)`, forcing all elements to render with their natural rectangular shape.
 
 6. **CLI configuration** - Pass target colors from qutebrowser config via CLI flags (see `darkmode.py` for pattern).
 
