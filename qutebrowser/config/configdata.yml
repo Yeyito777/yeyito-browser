@@ -2982,6 +2982,27 @@ colors.contextmenu.disabled.fg:
 
     If set to null, the Qt default is used.
 
+colors.contextmenu.menu.border:
+  type:
+    name: QssColor
+    none_ok: true
+  default: null
+  desc: >-
+    Border color of the context menu.
+
+    If set to null, no border is drawn.
+
+colors.contextmenu.alternate.bg:
+  type:
+    name: QssColor
+    none_ok: true
+  default: null
+  desc: >-
+    Alternating background color for context menu items. When set, menu item
+    backgrounds alternate between this color and colors.contextmenu.menu.bg.
+
+    If set to null, no alternating colors are used.
+
 colors.downloads.bar.bg:
   default: black
   type: QssColor

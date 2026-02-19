@@ -163,6 +163,9 @@ class MainWindow(QWidget):
             {% if conf.colors.contextmenu.menu.fg %}
                 color: {{ conf.colors.contextmenu.menu.fg }};
             {% endif %}
+            {% if conf.colors.contextmenu.menu.border %}
+                border: 1px solid {{ conf.colors.contextmenu.menu.border }};
+            {% endif %}
         }
 
         QMenu::item:selected {

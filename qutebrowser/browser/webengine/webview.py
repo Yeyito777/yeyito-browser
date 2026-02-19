@@ -10,7 +10,9 @@ from collections.abc import Iterable
 
 from qutebrowser.qt import machinery
 from qutebrowser.qt.core import pyqtSignal, pyqtSlot, QUrl
-from qutebrowser.qt.gui import QPalette
+from qutebrowser.qt.core import Qt
+from qutebrowser.qt.gui import QPalette, QColor, QPainter
+from qutebrowser.qt.widgets import QMenu
 from qutebrowser.qt.webenginewidgets import QWebEngineView
 from qutebrowser.qt.webenginecore import (
     QWebEnginePage, QWebEngineCertificateError, QWebEngineSettings,
@@ -35,6 +37,29 @@ _QB_FILESELECTION_MODES = {
     # (2) when a file input with "webkitdirectory" is used.
     QWebEnginePage.FileSelectionMode(2): shared.FileSelectionMode.folder,
 }
+
+
+class AlternatingContextMenu(QMenu):
+
+    """QMenu subclass that paints alternating background colors for items."""
+
+    def __init__(self, even_color, odd_color, parent=None):
+        super().__init__(parent)
+        self._even_color = QColor(even_color)
+        self._odd_color = QColor(odd_color)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        visual_idx = 0
+        for action in self.actions():
+            if action.isSeparator():
+                continue
+            rect = self.actionGeometry(action)
+            color = self._even_color if visual_idx % 2 == 0 else self._odd_color
+            painter.fillRect(rect, color)
+            visual_idx += 1
+        painter.end()
+        super().paintEvent(event)
 
 
 class WebEngineView(QWebEngineView):
@@ -127,11 +152,30 @@ class WebEngineView(QWebEngineView):
         return tab._widget  # pylint: disable=protected-access
 
     def contextMenuEvent(self, ev):
-        """Prevent context menus when rocker gestures are enabled."""
+        """Show context menu, with alternating row colors if configured."""
         if config.val.input.mouse.rocker_gestures:
             ev.ignore()
             return
-        super().contextMenuEvent(ev)
+
+        alt_bg = config.val.colors.contextmenu.alternate.bg
+        if not alt_bg:
+            super().contextMenuEvent(ev)
+            return
+
+        menu_bg = config.val.colors.contextmenu.menu.bg or '#000000'
+        standard_menu = self.createStandardContextMenu()
+        menu = AlternatingContextMenu(
+            even_color=alt_bg,
+            odd_color=menu_bg,
+            parent=self,
+        )
+        for action in standard_menu.actions():
+            menu.addAction(action)
+        # Keep standard_menu alive so its child actions aren't deleted
+        menu._source_menu = standard_menu
+        menu.setStyleSheet("QMenu { background-color: transparent; }")
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        menu.popup(ev.globalPos())
 
     def page(self) -> "WebEnginePage":
         """Return the page for this view."""
