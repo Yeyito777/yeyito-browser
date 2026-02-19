@@ -17,6 +17,7 @@ You're in my fork of qutebrowser's source. This fork includes a custom build of 
 | **dependencies**, packages, pacman, system updates, upstream sync | `reference/dependencies.md` |
 | **pdf.js patching**, PDF.js, polyfill, "is not a function" | `reference/pdfjs-polyfills.md` |
 | **user activation**, autoplay, video.play(), grant activation, session resume | `reference/user-activation.md` |
+| **localStorage**, auth loss, cookies, tokens, login, rebuild persistence | `reference/local-storage-persistence.md` |
 
 ## Custom QtWebEngine Build
 
