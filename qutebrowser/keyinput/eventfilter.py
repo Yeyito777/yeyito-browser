@@ -50,6 +50,10 @@ class EventFilter(QObject):
         Return:
             True if the event should be filtered, False if it's passed through.
         """
+        if objects.qapp.activePopupWidget() is not None:
+            # A popup (e.g. context menu) is open — let it handle its own
+            # keyboard events instead of routing them through the mode manager.
+            return False
         active_window = objects.qapp.activeWindow()
         if active_window not in objreg.window_registry.values():
             # Some other window (print dialog, etc.) is focused so we pass the

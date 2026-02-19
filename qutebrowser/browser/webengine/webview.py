@@ -11,12 +11,12 @@ from collections.abc import Iterable
 from qutebrowser.qt import machinery
 from qutebrowser.qt.core import pyqtSignal, pyqtSlot, QUrl
 from qutebrowser.qt.core import Qt
-from qutebrowser.qt.gui import QPalette, QColor, QPainter
+from qutebrowser.qt.gui import QPalette, QColor, QPainter, QKeyEvent
 from qutebrowser.qt.widgets import QMenu
 from qutebrowser.qt.webenginewidgets import QWebEngineView
 from qutebrowser.qt.webenginecore import (
     QWebEnginePage, QWebEngineCertificateError, QWebEngineSettings,
-    QWebEngineHistory,
+    QWebEngineHistory, QWebEngineContextMenuRequest,
 )
 
 from qutebrowser.browser import shared
@@ -39,27 +39,101 @@ _QB_FILESELECTION_MODES = {
 }
 
 
-class AlternatingContextMenu(QMenu):
+class ContextMenu(QMenu):
 
-    """QMenu subclass that paints alternating background colors for items."""
+    """QMenu subclass with vim-style navigation and optional alternating backgrounds.
 
-    def __init__(self, even_color, odd_color, parent=None):
+    Keyboard bindings:
+        j / Down  — next item
+        k / Up    — previous item
+        Enter     — trigger the active item
+        Esc       — close the menu
+    """
+
+    # Default action text to pre-select, keyed by context type.
+    # Falls through in order: media-specific → link → editable → selected text → page.
+    _DEFAULT_ACTIONS = {
+        'image': "Copy image",
+        'video': "Save media",
+        'audio': "Copy media address",
+        'link': "Open link in new tab",
+        'editable': "Paste",
+        'selection': "Copy",
+        'page': "View page source",
+    }
+
+    def __init__(self, *, even_color=None, odd_color=None, parent=None):
         super().__init__(parent)
-        self._even_color = QColor(even_color)
-        self._odd_color = QColor(odd_color)
+        self._even_color = QColor(even_color) if even_color else None
+        self._odd_color = QColor(odd_color) if odd_color else None
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        visual_idx = 0
-        for action in self.actions():
-            if action.isSeparator():
-                continue
-            rect = self.actionGeometry(action)
-            color = self._even_color if visual_idx % 2 == 0 else self._odd_color
-            painter.fillRect(rect, color)
-            visual_idx += 1
-        painter.end()
+        if self._even_color and self._odd_color:
+            painter = QPainter(self)
+            visual_idx = 0
+            for action in self.actions():
+                if action.isSeparator():
+                    continue
+                rect = self.actionGeometry(action)
+                color = self._even_color if visual_idx % 2 == 0 else self._odd_color
+                painter.fillRect(rect, color)
+                visual_idx += 1
+            painter.end()
         super().paintEvent(event)
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key == Qt.Key.Key_J:
+            fake = QKeyEvent(event.type(), Qt.Key.Key_Down,
+                             event.modifiers())
+            super().keyPressEvent(fake)
+        elif key == Qt.Key.Key_K:
+            fake = QKeyEvent(event.type(), Qt.Key.Key_Up,
+                             event.modifiers())
+            super().keyPressEvent(fake)
+        else:
+            super().keyPressEvent(event)
+
+    def select_default_for_context(self, request):
+        """Pre-select a sensible action based on what was right-clicked."""
+        if request is None:
+            return
+
+        media = request.mediaType()
+        media_map = {
+            QWebEngineContextMenuRequest.MediaType.MediaTypeImage: 'image',
+            QWebEngineContextMenuRequest.MediaType.MediaTypeVideo: 'video',
+            QWebEngineContextMenuRequest.MediaType.MediaTypeAudio: 'audio',
+        }
+
+        # Determine context type in priority order
+        context = media_map.get(media)
+        if not context:
+            if request.linkUrl().isValid():
+                context = 'link'
+            elif request.isContentEditable():
+                context = 'editable'
+            elif request.selectedText():
+                context = 'selection'
+            else:
+                context = 'page'
+
+        target_text = self._DEFAULT_ACTIONS.get(context)
+        if not target_text:
+            return
+
+        action_texts = {a.text(): a for a in self.actions()
+                        if not a.isSeparator() and a.isEnabled()}
+        action = action_texts.get(target_text)
+        if action:
+            self.setActiveAction(action)
+            return
+
+        # Fallback: first enabled non-separator action
+        for a in self.actions():
+            if not a.isSeparator() and a.isEnabled():
+                self.setActiveAction(a)
+                return
 
 
 class WebEngineView(QWebEngineView):
@@ -152,29 +226,28 @@ class WebEngineView(QWebEngineView):
         return tab._widget  # pylint: disable=protected-access
 
     def contextMenuEvent(self, ev):
-        """Show context menu, with alternating row colors if configured."""
+        """Show context menu with vim-style navigation and smart defaults."""
         if config.val.input.mouse.rocker_gestures:
             ev.ignore()
             return
 
         alt_bg = config.val.colors.contextmenu.alternate.bg
-        if not alt_bg:
-            super().contextMenuEvent(ev)
-            return
+        menu_bg = config.val.colors.contextmenu.menu.bg
 
-        menu_bg = config.val.colors.contextmenu.menu.bg or '#000000'
         standard_menu = self.createStandardContextMenu()
-        menu = AlternatingContextMenu(
+        menu = ContextMenu(
             even_color=alt_bg,
-            odd_color=menu_bg,
+            odd_color=(menu_bg or '#000000') if alt_bg else None,
             parent=self,
         )
         for action in standard_menu.actions():
             menu.addAction(action)
         # Keep standard_menu alive so its child actions aren't deleted
         menu._source_menu = standard_menu
-        menu.setStyleSheet("QMenu { background-color: transparent; }")
+        if alt_bg:
+            menu.setStyleSheet("QMenu { background-color: transparent; }")
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        menu.select_default_for_context(self.lastContextMenuRequest())
         menu.popup(ev.globalPos())
 
     def page(self) -> "WebEnginePage":

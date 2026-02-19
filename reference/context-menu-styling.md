@@ -1,6 +1,6 @@
 # Context Menu Styling
 
-Right-click context menus (page body menu, image menu, link menu, etc.) are `QMenu` instances created by QtWebEngine's C++ side. This document covers how they're instantiated, how styling is applied, and the custom alternating-background mechanism.
+Right-click context menus (page body menu, image menu, link menu, etc.) are `QMenu` instances created by QtWebEngine's C++ side. This document covers how they're instantiated, how styling is applied, the custom alternating-background mechanism, and vim-style keyboard navigation.
 
 ## How context menus are created
 
@@ -17,7 +17,7 @@ The default `contextMenuEvent()` simply calls `menu->popup(event->globalPos())`.
 
 ### Python layer
 
-`WebEngineView.contextMenuEvent()` in `qutebrowser/browser/webengine/webview.py` overrides the Qt virtual. When `colors.contextmenu.alternate.bg` is **not** set, it delegates to `super().contextMenuEvent(ev)` which hits the C++ path above. When the alternating config is set, it intercepts the menu creation (see below).
+`WebEngineView.contextMenuEvent()` in `qutebrowser/browser/webengine/webview.py` overrides the Qt virtual. It always creates a `ContextMenu` (custom `QMenu` subclass) to provide vim-style keyboard navigation and smart default selection. The standard menu's actions are transferred to the custom menu.
 
 ## QSS-based styling (border, background, colors)
 
@@ -63,19 +63,21 @@ All default to `null` (Qt default styling). The `menu.border` and `alternate.bg`
 
 ## Alternating row backgrounds
 
-QSS has no `nth-child` or `alternate-background-color` support for `QMenu` items (those only work on `QAbstractItemView` subclasses). Alternating backgrounds are implemented via a custom `QMenu` subclass with an overridden `paintEvent`.
+QSS has no `nth-child` or `alternate-background-color` support for `QMenu` items (those only work on `QAbstractItemView` subclasses). Alternating backgrounds are implemented via the `ContextMenu` subclass's overridden `paintEvent`.
 
-### `AlternatingContextMenu` class
+### `ContextMenu` class
 
 Defined in `qutebrowser/browser/webengine/webview.py`:
 
 ```python
-class AlternatingContextMenu(QMenu):
-    def __init__(self, even_color, odd_color, parent=None)
+class ContextMenu(QMenu):
+    def __init__(self, *, even_color=None, odd_color=None, parent=None)
     def paintEvent(self, event)
+    def keyPressEvent(self, event)
+    def select_default_for_context(self, request)
 ```
 
-**Paint order:**
+**Paint order** (when alternating colors are configured):
 
 1. `paintEvent()` opens a `QPainter` on the widget
 2. Iterates `self.actions()`, skipping separators, tracking a `visual_idx`
@@ -84,9 +86,11 @@ class AlternatingContextMenu(QMenu):
 5. Closes the painter
 6. Calls `super().paintEvent(event)` — the normal QMenu paint draws text, icons, separators, and selected/disabled highlights **on top** of the pre-painted backgrounds
 
+When `even_color` and `odd_color` are `None`, `paintEvent()` skips straight to `super().paintEvent(event)`.
+
 ### Why per-instance QSS is needed
 
-The `MainWindow` QSS sets `QMenu { background-color: <color>; }`. When `super().paintEvent()` runs, it fills the entire menu widget with that color, overwriting the alternating backgrounds painted in step 1–4. To prevent this, the `AlternatingContextMenu` instance gets a per-instance stylesheet:
+The `MainWindow` QSS sets `QMenu { background-color: <color>; }`. When `super().paintEvent()` runs, it fills the entire menu widget with that color, overwriting the alternating backgrounds painted in step 1–4. To prevent this, the `ContextMenu` instance gets a per-instance stylesheet when alternating is enabled:
 
 ```python
 menu.setStyleSheet("QMenu { background-color: transparent; }")
@@ -96,17 +100,67 @@ This overrides only the `background-color` property for this specific menu. Othe
 
 ### Action lifecycle
 
-`WebEngineView.contextMenuEvent()` calls `self.createStandardContextMenu()` to get the standard `QMenu` with all the browser-generated actions (back, forward, reload, copy image, etc.). It then creates an `AlternatingContextMenu` and transfers the actions:
+`WebEngineView.contextMenuEvent()` calls `self.createStandardContextMenu()` to get the standard `QMenu` with all the browser-generated actions (back, forward, reload, copy image, etc.). It then creates a `ContextMenu` and transfers the actions:
 
 ```python
 standard_menu = self.createStandardContextMenu()
-menu = AlternatingContextMenu(even_color=alt_bg, odd_color=menu_bg, parent=self)
+menu = ContextMenu(even_color=alt_bg, odd_color=..., parent=self)
 for action in standard_menu.actions():
     menu.addAction(action)
 menu._source_menu = standard_menu  # prevent GC
 ```
 
 `QMenu.addAction()` adds the `QAction` to the new menu's action list without re-parenting it — the actions remain children of `standard_menu`. The `_source_menu` reference prevents `standard_menu` from being garbage-collected (which would destroy the child actions) while the custom menu is alive. `WA_DeleteOnClose` is set on the custom menu so both menus are cleaned up when the user dismisses the context menu.
+
+## Keyboard navigation
+
+### Vim-style bindings
+
+`ContextMenu.keyPressEvent()` maps vim keys to Qt's built-in `QMenu` keyboard handling:
+
+| Key | Effect |
+|-----|--------|
+| `j` | Move to next item (synthesizes `Key_Down`) |
+| `k` | Move to previous item (synthesizes `Key_Up`) |
+| `Enter` | Trigger the active item (native `QMenu` behavior) |
+| `Esc` | Close the menu (native `QMenu` behavior) |
+
+The `j` and `k` keys create synthetic `QKeyEvent` objects with `Key_Down`/`Key_Up` and pass them to `super().keyPressEvent()`, so Qt's native menu navigation logic handles wrapping, skipping separators and disabled items, etc.
+
+### Event filter bypass
+
+Qutebrowser installs an application-level event filter (`qutebrowser/keyinput/eventfilter.py`) on `QApplication` that intercepts all `KeyPress`, `KeyRelease`, and `ShortcutOverride` events and routes them through the mode manager (`qutebrowser/keyinput/modeman.py`). Without special handling, the mode manager would consume key events (j/k/Esc/Enter) before they reach the popup `QMenu`.
+
+The fix is in `EventFilter._handle_key_event()`:
+
+```python
+if objects.qapp.activePopupWidget() is not None:
+    return False  # let the popup handle its own keyboard events
+```
+
+`QApplication.activePopupWidget()` returns the currently active popup widget (e.g., a `QMenu`). When a popup is active, the event filter returns `False` immediately, bypassing the mode manager and letting Qt deliver the event to the popup's `keyPressEvent()`.
+
+### Smart default selection
+
+`ContextMenu.select_default_for_context(request)` uses `QWebEngineContextMenuRequest` (from `self.lastContextMenuRequest()`) to determine what was right-clicked and pre-selects a sensible action via `QMenu.setActiveAction()`:
+
+| Context | Default action |
+|---------|---------------|
+| Image | "Copy image" |
+| Video | "Save media" |
+| Audio | "Copy media address" |
+| Link | "Open link in new tab" |
+| Editable field | "Paste" |
+| Selected text | "Copy" |
+| Plain page | "View page source" |
+
+Context detection priority: media type → link URL → editable → selected text → page. If the target action text isn't found in the menu, falls back to the first enabled non-separator action.
+
+The context type is determined from the request object:
+- `request.mediaType()` — checks against `MediaTypeImage`, `MediaTypeVideo`, `MediaTypeAudio`
+- `request.linkUrl().isValid()` — link context
+- `request.isContentEditable()` — editable field
+- `request.selectedText()` — text selection
 
 ## Files involved
 
@@ -115,5 +169,7 @@ menu._source_menu = standard_menu  # prevent GC
 | `qutebrowser/config/configdata.yml` | Config option definitions (`colors.contextmenu.*`) |
 | `qutebrowser/mainwindow/mainwindow.py` | QSS template (`MainWindow.STYLESHEET`) with `QMenu` rules |
 | `qutebrowser/config/stylesheet.py` | Jinja2 rendering and live-reload of QSS |
-| `qutebrowser/browser/webengine/webview.py` | `AlternatingContextMenu` class and `WebEngineView.contextMenuEvent()` |
+| `qutebrowser/browser/webengine/webview.py` | `ContextMenu` class and `WebEngineView.contextMenuEvent()` |
+| `qutebrowser/keyinput/eventfilter.py` | App-level event filter with popup bypass in `_handle_key_event()` |
 | `qtwebengine/src/webenginewidgets/api/qwebengineview.cpp` | C++ `createStandardContextMenu()` and default `contextMenuEvent()` |
+| `pyqt6-webengine/sip/QtWebEngineCore/qwebenginecontextmenurequest.sip` | SIP bindings for `QWebEngineContextMenuRequest` |
