@@ -96,6 +96,7 @@ struct NetworkRequestEntry {
     double receiveHeadersStartMs, receiveHeadersEndMs;
 
     QString remoteEndpoint;        // "IP:port" string
+    QJsonObject requestHeaders;    // blink request headers (sub-resource requests only)
 
     QJsonObject toSummaryJson() const;  // compact: id, url, method, status, type, mimeType, size, cached
     QJsonObject toDetailJson() const;   // everything including timing object
@@ -130,7 +131,7 @@ Returns 8 fields: `id`, `url`, `method`, `status`, `type`, `mimeType`, `size`, `
 
 ### toDetailJson (`network_request_buffer.cpp:26–58`)
 
-Returns all summary fields plus: `originalUrl`, `netError` (always), `rawBodyBytes`, `totalReceivedBytes`, `remoteEndpoint` (conditional on non-empty), and a nested `timing` object with 10 fields.
+Returns all summary fields plus: `originalUrl`, `netError` (always), `rawBodyBytes`, `totalReceivedBytes`, `remoteEndpoint` (conditional on non-empty), `requestHeaders` (conditional on non-empty), and a nested `timing` object with 10 fields.
 
 ### requestDestinationToType (`web_contents_delegate_qt.cpp:942–981`)
 
@@ -184,7 +185,8 @@ Flow:
    - `load_timing_info.connect_timing.ssl_start/end` — TLS
    - `load_timing_info.send_start/end` — request sent
    - `load_timing_info.receive_headers_start/end` — response headers
-5. **Line 1037**: Moves entry into buffer
+5. **Lines 1037–1040**: Copies request headers from `resource_load_info.request_headers` (a `flat_map<string, string>`) into `entry.requestHeaders` as a `QJsonObject`. Only sub-resource requests have headers populated — document/navigation requests arrive with an empty map due to Chromium's architecture (see Mojo struct section).
+6. **Line 1042**: Moves entry into buffer
 
 ### PrimaryPageChanged (`web_contents_delegate_qt.cpp:481–483`)
 
@@ -423,6 +425,7 @@ Defined in `third_party/blink/public/mojom/loader/resource_load_info.mojom`. Thi
 | `total_received_bytes` | `int64` | `totalReceivedBytes` |
 | `load_timing_info` | `net::LoadTimingInfo` | timing fields |
 | `network_info` | `blink::mojom::CommonNetworkInfoPtr` | `remoteEndpoint` |
+| `request_headers` | `map<string, string>` | `requestHeaders` |
 
 ### net::LoadTimingInfo
 
@@ -489,11 +492,17 @@ The `detail` subcommand now combines C++ metadata with JS-fetched response data:
 | `responseHeaders` | JS `fetch({cache: "force-cache"}).headers` |
 | `body` (full response text) | JS `fetch({cache: "force-cache"}).text()` |
 
+**Available for sub-resource requests only:**
+
+| Field | Source | Note |
+|-------|--------|------|
+| `requestHeaders` | C++ NetworkRequestBuffer (from Mojo IPC `request_headers`) | Only populated for sub-resource requests (scripts, stylesheets, images, fonts, fetch/XHR). Document/navigation requests have an empty map — their headers are assembled in the browser process via `BeginNavigationParams` and not forwarded to the renderer's `ResourceLoadComplete` callback. Headers include blink-set values like Accept, User-Agent, sec-ch-ua, etc. Network-service-added headers (Accept-Encoding, Host) are NOT included. |
+
 **Not available** (would require C++ changes or DevTools bridge):
 
 | Feature | Why | Workaround |
 |---------|-----|------------|
-| Request headers | Not captured by `ResourceLoadComplete` | Would need `NavigationHandle` or DevTools `Network.requestWillBeSentExtraInfo` |
+| Request headers (document requests) | Navigation headers assembled in browser process, not forwarded to renderer | Would need `NavigationHandle` or DevTools `Network.requestWillBeSentExtraInfo` |
 | Request body (POST payloads) | Not captured by `ResourceLoadComplete` | None — data doesn't reach the observer |
 | `set-cookie` headers | Stripped by `fetch().headers` per spec | Would need C++ `HttpResponseHeaders` interception |
 | Redirect chain (individual hops) | Only `url` vs `originalUrl` captured | Would need `NavigationHandle` redirect tracking |

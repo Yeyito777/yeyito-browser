@@ -124,7 +124,7 @@ For full technical reference (every file, function, line), see **[network-tab-to
 | Command | Status | Output file | Output |
 |---------|--------|-------------|--------|
 | `network.sh list` | Working | `network.json` | JSON with url, method, status, type, mimeType, size, cached for each request |
-| `network.sh detail <id>` | Working | `request-{id}.json` | C++ metadata + response body + response headers (via HTTP cache re-fetch) |
+| `network.sh detail <id>` | Working | `request-{id}.json` | C++ metadata + request headers (sub-resources only) + response body + response headers (via HTTP cache re-fetch) |
 | `network.sh body <id>` | Not yet implemented | `network-body` | Needs DevTools bridge |
 | `network.sh ws <id>` | Not yet implemented | `network.json` | Needs DevTools bridge |
 

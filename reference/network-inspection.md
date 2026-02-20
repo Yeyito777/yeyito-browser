@@ -97,17 +97,24 @@ The full JSON is in `request-685216.json`:
 ```json
 {
   "id": 685216,
-  "url": "https://example.com/",
-  "originalUrl": "https://example.com/",
+  "url": "https://example.com/_next/static/chunks/abc123.js",
+  "originalUrl": "https://example.com/_next/static/chunks/abc123.js",
   "method": "GET",
   "status": 200,
-  "type": "document",
-  "mimeType": "text/html",
+  "type": "script",
+  "mimeType": "application/javascript",
   "cached": false,
   "netError": 0,
   "rawBodyBytes": 52341,
   "totalReceivedBytes": 53102,
   "remoteEndpoint": "93.184.216.34:443",
+  "requestHeaders": {
+    "Accept": "*/*",
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ...",
+    "sec-ch-ua": "\"Not:A-Brand\";v=\"24\", \"Chromium\";v=\"134\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": "\"Linux\""
+  },
   "timing": {
     "dnsStartMs": 20.4,
     "dnsEndMs": 98.1,
@@ -121,12 +128,12 @@ The full JSON is in `request-685216.json`:
     "receiveHeadersEndMs": 306.2
   },
   "responseHeaders": {
-    "content-type": "text/html; charset=utf-8",
+    "content-type": "application/javascript",
     "content-encoding": "br",
-    "cache-control": "private, no-cache",
+    "cache-control": "public, max-age=31536000",
     "server": "cloudflare"
   },
-  "body": "<!doctype html>\n<html>..."
+  "body": "\"use strict\";(self.webpackChunk..."
 }
 ```
 
@@ -227,11 +234,13 @@ The `type` field in request entries maps from Chromium's `RequestDestination` en
 
 The data comes from Chromium's `ResourceLoadComplete` callback, which fires for every completed resource load. This is the same data source Chrome uses for its Network panel resource summary.
 
-**Available via C++ buffer**: URL, method, status, resource type, MIME type, body size, total bytes, cache status, network error code, DNS/TCP/TLS/send/TTFB timing, remote IP:port, original URL (before redirects).
+**Available via C++ buffer**: URL, method, status, resource type, MIME type, body size, total bytes, cache status, network error code, DNS/TCP/TLS/send/TTFB timing, remote IP:port, original URL (before redirects), request headers (sub-resource requests only — see below).
 
 **Available via JS fetch (detail only)**: response headers, response body text (for same-origin and CORS-enabled resources).
 
-**Not available**: request headers, request body (POST payloads), `set-cookie` headers (stripped by `fetch().headers` per spec), cookies, WebSocket frames, request initiator, redirect chain (individual hops).
+**Not available**: request body (POST payloads), `set-cookie` headers (stripped by `fetch().headers` per spec), cookies, WebSocket frames, request initiator, redirect chain (individual hops).
+
+**Request headers caveat**: Request headers are captured for sub-resource requests (scripts, stylesheets, images, fonts, fetch/XHR, etc.) but NOT for document/navigation requests. This is a Chromium architectural limitation — sub-resources go through `resource_request_sender.cc` where blink's request headers are accessible, while document requests go through `navigation_body_loader.cc` where the headers are assembled in the browser process and not forwarded to the renderer's `ResourceLoadComplete` callback. The `requestHeaders` field is omitted from the JSON when empty.
 
 ## Error Handling
 
