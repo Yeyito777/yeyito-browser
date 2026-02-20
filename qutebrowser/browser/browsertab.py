@@ -1268,6 +1268,16 @@ class AbstractTab(QWidget):
         """
         raise NotImplementedError
 
+    def network_query(self, query_type, query_args, callback):
+        """Query DevTools network data. Implemented by backend.
+
+        Args:
+            query_type: 'list' | 'detail' | 'body' | 'ws_frames'
+            query_args: dict with query-specific args (e.g. {'request_id': '42'})
+            callback: called with result string (JSON or raw body bytes)
+        """
+        raise NotImplementedError
+
     def run_js_async(
             self,
             code: str,

@@ -58,6 +58,7 @@ class TabRuntimeManager(QObject):
         self._write_tab(tab_id)
         self._write_snapshot_script(tab_id)
         self._write_console_script(tab_id)
+        self._write_network_script(tab_id)
 
         # Per-tab signal connections
         tab.url_changed.connect(
@@ -411,6 +412,397 @@ class TabRuntimeManager(QObject):
         tab.run_js_async(
             "document.querySelector('video')?.play()",
             world=usertypes.JsWorld.main)
+
+    def _find_tab(self, tab_id_str):
+        """Find a tab widget by its string ID."""
+        for t in self._tabbed_browser.widgets():
+            if str(t.tab_id) == tab_id_str:
+                return t
+        return None
+
+    def network_list(self, tab_id_str):
+        """Query all captured network requests for a tab."""
+        tab = self._find_tab(tab_id_str)
+        if tab is None:
+            return False
+        result_path = self._tabs_dir / tab_id_str / 'network.json'
+
+        def _on_result(data):
+            try:
+                result_path.write_text(
+                    data if data else '{"error":"not available"}\n')
+            except FileNotFoundError:
+                pass
+
+        tab.network_query('list', {}, _on_result)
+        return True
+
+    def network_detail(self, tab_id_str, request_id):
+        """Get detail + response body/headers for a network request.
+
+        Chains: C++ detail → JS fetch (via console.log callback) → write file.
+        Uses console.log with a sentinel prefix because QtWebEngine's
+        runJavaScript callback doesn't resolve Promises.
+        """
+        tab = self._find_tab(tab_id_str)
+        if tab is None:
+            return False
+        result_path = self._tabs_dir / tab_id_str / f'request-{request_id}.json'
+        sentinel = f'__qb_nr_{request_id}'
+
+        def _write(obj):
+            try:
+                result_path.write_text(json.dumps(obj, indent=2) + '\n')
+            except FileNotFoundError:
+                pass
+
+        def _on_detail(data):
+            if not data:
+                _write({'error': 'not available'})
+                return
+            try:
+                detail = json.loads(data)
+            except json.JSONDecodeError:
+                _write({'error': 'invalid response'})
+                return
+            if 'error' in detail:
+                _write(detail)
+                return
+
+            url = detail.get('url', '')
+            if not url:
+                _write(detail)
+                return
+
+            # Listen for the fetch result via console.log sentinel
+            def _on_console(level, source, line, msg):
+                if not msg.startswith(sentinel):
+                    return
+                try:
+                    tab.console_message.disconnect(_on_console)
+                except TypeError:
+                    pass
+                payload = msg[len(sentinel):]
+                if payload:
+                    try:
+                        detail.update(json.loads(payload))
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                _write(detail)
+
+            tab.console_message.connect(_on_console)
+
+            # Re-fetch from HTTP cache to get body + response headers
+            url_json = json.dumps(url)
+            sentinel_json = json.dumps(sentinel)
+            fetch_js = (
+                f'fetch({url_json}, {{cache: "force-cache"}})'
+                '.then(async function(r) {'
+                '  var h = {};'
+                '  r.headers.forEach(function(v, k) { h[k] = v; });'
+                f'  console.log({sentinel_json} + JSON.stringify({{responseHeaders: h, body: await r.text()}}));'
+                '}).catch(function(e) {'
+                f'  console.log({sentinel_json} + JSON.stringify({{bodyError: e.message}}));'
+                '})'
+            )
+            tab.run_js_async(fetch_js, world=usertypes.JsWorld.main)
+
+        tab.network_query('detail', {'request_id': request_id}, _on_detail)
+        return True
+
+    def network_body(self, tab_id_str, request_id):
+        """Get response body for a network request."""
+        tab = self._find_tab(tab_id_str)
+        if tab is None:
+            return False
+        body_path = self._tabs_dir / tab_id_str / 'network-body'
+
+        def _on_result(data):
+            try:
+                if isinstance(data, bytes):
+                    body_path.write_bytes(data)
+                else:
+                    body_path.write_text(data if data else '')
+            except FileNotFoundError:
+                pass
+
+        tab.network_query('body', {'request_id': request_id}, _on_result)
+        return True
+
+    def network_ws_frames(self, tab_id_str, request_id):
+        """Get WebSocket frames for a connection."""
+        tab = self._find_tab(tab_id_str)
+        if tab is None:
+            return False
+        result_path = self._tabs_dir / tab_id_str / 'network.json'
+
+        def _on_result(data):
+            try:
+                result_path.write_text(
+                    data if data else '{"error":"not available"}\n')
+            except FileNotFoundError:
+                pass
+
+        tab.network_query('ws_frames', {'request_id': request_id}, _on_result)
+        return True
+
+    def _write_network_script(self, tab_id):
+        """Write an executable shell script that queries network data."""
+        basedir = str(Path(standarddir.runtime()).parent)
+        runtime_dir = standarddir.runtime()
+        result_path = self._tabs_dir / tab_id / 'network.json'
+        body_path = self._tabs_dir / tab_id / 'network-body'
+        script_path = self._tabs_dir / tab_id / 'network.sh'
+
+        # Compute the IPC socket path (mirrors ipc._get_socketname)
+        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
+        md5 = hashlib.md5(data_to_hash).hexdigest()
+        socket_path = Path(runtime_dir) / f'ipc-{md5}'
+
+        script_path.write_text(
+            '#!/bin/sh\n'
+            '\n'
+            '# Parse arguments\n'
+            'TIMEOUT=5\n'
+            'SUBCMD="list"\n'
+            'REQUEST_ID=""\n'
+            'FILTER_ERRORS=0\n'
+            'FILTER_TYPE=""\n'
+            'FILTER_URL=""\n'
+            '\n'
+            'usage() {\n'
+            '    echo "Usage: network.sh [list|detail|body|ws] [options]" >&2\n'
+            '    echo "" >&2\n'
+            '    echo "Subcommands:" >&2\n'
+            '    echo "  list                    List all captured requests (default)" >&2\n'
+            '    echo "  detail <request_id>     Full headers/cookies/timing for a request" >&2\n'
+            '    echo "  body <request_id>       Response body (raw bytes)" >&2\n'
+            '    echo "  ws <request_id>         WebSocket frames" >&2\n'
+            '    echo "" >&2\n'
+            '    echo "Options:" >&2\n'
+            '    echo "  --timeout <seconds>     Query timeout (default: 5)" >&2\n'
+            '    echo "  --errors                Filter list: status >= 400 or 0" >&2\n'
+            '    echo "  --type <type>           Filter list by resource type (e.g. xhr)" >&2\n'
+            '    echo "  --url <pattern>         Filter list by URL pattern (grep)" >&2\n'
+            '    exit 1\n'
+            '}\n'
+            '\n'
+            'while [ $# -gt 0 ]; do\n'
+            '    case "$1" in\n'
+            '        list|detail|body|ws)\n'
+            '            SUBCMD="$1"\n'
+            '            shift\n'
+            '            ;;\n'
+            '        --timeout)\n'
+            '            TIMEOUT="$2"\n'
+            '            shift 2\n'
+            '            ;;\n'
+            '        --timeout=*)\n'
+            '            TIMEOUT="${1#--timeout=}"\n'
+            '            shift\n'
+            '            ;;\n'
+            '        --errors)\n'
+            '            FILTER_ERRORS=1\n'
+            '            shift\n'
+            '            ;;\n'
+            '        --type)\n'
+            '            FILTER_TYPE="$2"\n'
+            '            shift 2\n'
+            '            ;;\n'
+            '        --type=*)\n'
+            '            FILTER_TYPE="${1#--type=}"\n'
+            '            shift\n'
+            '            ;;\n'
+            '        --url)\n'
+            '            FILTER_URL="$2"\n'
+            '            shift 2\n'
+            '            ;;\n'
+            '        --url=*)\n'
+            '            FILTER_URL="${1#--url=}"\n'
+            '            shift\n'
+            '            ;;\n'
+            '        -h|--help)\n'
+            '            usage\n'
+            '            ;;\n'
+            '        *)\n'
+            '            if [ -z "$REQUEST_ID" ]; then\n'
+            '                REQUEST_ID="$1"\n'
+            '            else\n'
+            '                echo "Error: unexpected argument: $1" >&2\n'
+            '                usage\n'
+            '            fi\n'
+            '            shift\n'
+            '            ;;\n'
+            '    esac\n'
+            'done\n'
+            '\n'
+            '# Validate subcommand args\n'
+            'case "$SUBCMD" in\n'
+            '    detail|body|ws)\n'
+            '        if [ -z "$REQUEST_ID" ]; then\n'
+            '            echo "Error: $SUBCMD requires a <request_id> argument" >&2\n'
+            '            usage\n'
+            '        fi\n'
+            '        ;;\n'
+            'esac\n'
+            '\n'
+            f'SOCKET="{socket_path}"\n'
+            f'RESULT_FILE="{result_path}"\n'
+            f'BODY_FILE="{body_path}"\n'
+            f'TAB_ID="{tab_id}"\n'
+            f'TAB_DIR="{self._tabs_dir / tab_id}"\n'
+            'INTERVAL=0.5\n'
+            'ATTEMPTS=$(awk "BEGIN {printf \\"%d\\", $TIMEOUT / $INTERVAL}")\n'
+            '\n'
+            'if [ ! -S "$SOCKET" ]; then\n'
+            '    echo "Error: IPC socket not found (is qutebrowser running?)" >&2\n'
+            '    exit 1\n'
+            'fi\n'
+            '\n'
+            '# Map subcommand to IPC command\n'
+            'case "$SUBCMD" in\n'
+            '    list)\n'
+            '        rm -f "$RESULT_FILE"\n'
+            '        POLL_FILE="$RESULT_FILE"\n'
+            '        CMD=":network-list $TAB_ID"\n'
+            '        ;;\n'
+            '    detail)\n'
+            '        POLL_FILE="$TAB_DIR/request-${REQUEST_ID}.json"\n'
+            '        rm -f "$POLL_FILE"\n'
+            '        CMD=":network-detail $TAB_ID $REQUEST_ID"\n'
+            '        ;;\n'
+            '    body)\n'
+            '        rm -f "$BODY_FILE"\n'
+            '        POLL_FILE="$BODY_FILE"\n'
+            '        CMD=":network-body $TAB_ID $REQUEST_ID"\n'
+            '        ;;\n'
+            '    ws)\n'
+            '        rm -f "$RESULT_FILE"\n'
+            '        POLL_FILE="$RESULT_FILE"\n'
+            '        CMD=":network-ws-frames $TAB_ID $REQUEST_ID"\n'
+            '        ;;\n'
+            'esac\n'
+            '\n'
+            'PAYLOAD=$(printf \'{"args":["%s"],"target_arg":"tab-silent","protocol_version":1}\' "$CMD")\n'
+            'printf \'%s\\n\' "$PAYLOAD" | socat - UNIX-CONNECT:"$SOCKET"\n'
+            '\n'
+            'i=0\n'
+            'while [ $i -lt $ATTEMPTS ]; do\n'
+            '    sleep $INTERVAL\n'
+            '    if [ -f "$POLL_FILE" ]; then\n'
+            '        # Apply client-side filters and write back for list subcommand\n'
+            '        if [ "$SUBCMD" = "list" ]; then\n'
+            '            OUTPUT=$(cat "$POLL_FILE")\n'
+            '            if [ "$FILTER_ERRORS" = "1" ] && command -v jq >/dev/null 2>&1; then\n'
+            '                OUTPUT=$(echo "$OUTPUT" | jq \'{requests: [.requests[] | select(.status >= 400 or .status == 0)], count: ([.requests[] | select(.status >= 400 or .status == 0)] | length)}\')\n'
+            '            fi\n'
+            '            if [ -n "$FILTER_TYPE" ] && command -v jq >/dev/null 2>&1; then\n'
+            '                OUTPUT=$(echo "$OUTPUT" | jq --arg t "$FILTER_TYPE" \'{requests: [.requests[] | select(.type == $t)], count: ([.requests[] | select(.type == $t)] | length)}\')\n'
+            '            fi\n'
+            '            if [ -n "$FILTER_URL" ]; then\n'
+            '                if command -v jq >/dev/null 2>&1; then\n'
+            '                    OUTPUT=$(echo "$OUTPUT" | jq --arg p "$FILTER_URL" \'{requests: [.requests[] | select(.url | test($p))], count: ([.requests[] | select(.url | test($p))] | length)}\')\n'
+            '                fi\n'
+            '            fi\n'
+            '            # Write filtered result back to file\n'
+            '            printf \'%s\\n\' "$OUTPUT" > "$POLL_FILE"\n'
+            '        fi\n'
+            '\n'
+            '        BYTES=$(wc -c < "$POLL_FILE")\n'
+            '        KB=$(awk "BEGIN {printf \\"%.1f\\", $BYTES / 1024}")\n'
+            '\n'
+            '        # Pretty-print summary\n'
+            '        printf "\\e[96m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\e[0m\\n"\n'
+            '        case "$SUBCMD" in\n'
+            '            list)\n'
+            '                printf "\\e[32m  Network data saved to network.json\\e[0m\\n"\n'
+            '                if command -v jq >/dev/null 2>&1; then\n'
+            '                    COUNT=$(echo "$OUTPUT" | jq -r ".count // 0")\n'
+            '                    printf "\\e[36m  ${KB}KB \\e[96m│\\e[36m ${COUNT} requests\\e[0m\\n"\n'
+            '                    # Type breakdown\n'
+            '                    TYPES=$(echo "$OUTPUT" | jq -r \'[.requests[].type] | group_by(.) | map("\\(length) \\(.[0])") | join(", ")\')\n'
+            '                    if [ -n "$TYPES" ]; then\n'
+            '                        printf "\\e[36m  %s\\e[0m\\n" "$TYPES"\n'
+            '                    fi\n'
+            '                    # Error summary\n'
+            '                    ERR_COUNT=$(echo "$OUTPUT" | jq \'[.requests[] | select(.status >= 400 or (.status == 0 and (.netError // 0) != 0))] | length\')\n'
+            '                    if [ "$ERR_COUNT" -gt 0 ] 2>/dev/null; then\n'
+            '                        printf "\\e[33m  %s request(s) with errors\\e[0m\\n" "$ERR_COUNT"\n'
+            '                    fi\n'
+            '                else\n'
+            '                    printf "\\e[36m  ${KB}KB\\e[0m\\n"\n'
+            '                fi\n'
+            '                ;;\n'
+            '            detail)\n'
+            '                printf "\\e[32m  Request saved to request-${REQUEST_ID}.json\\e[0m\\n"\n'
+            '                if command -v jq >/dev/null 2>&1; then\n'
+            '                    DETAIL=$(cat "$POLL_FILE")\n'
+            '                    D_URL=$(echo "$DETAIL" | jq -r ".url // \\"-\\"")\n'
+            '                    D_STATUS=$(echo "$DETAIL" | jq -r ".status // 0")\n'
+            '                    D_METHOD=$(echo "$DETAIL" | jq -r ".method // \\"-\\"")\n'
+            '                    D_TYPE=$(echo "$DETAIL" | jq -r ".type // \\"-\\"")\n'
+            '                    D_SIZE=$(echo "$DETAIL" | jq -r ".rawBodyBytes // 0")\n'
+            '                    D_CACHED=$(echo "$DETAIL" | jq -r ".cached // false")\n'
+            '                    D_REMOTE=$(echo "$DETAIL" | jq -r ".remoteEndpoint // \\"-\\"")\n'
+            '                    # Truncate URL for display\n'
+            '                    D_URL_SHORT=$(printf "%.60s" "$D_URL")\n'
+            '                    [ ${#D_URL} -gt 60 ] && D_URL_SHORT="${D_URL_SHORT}..."\n'
+            '                    printf "\\e[36m  ${KB}KB \\e[96m│\\e[36m ${D_METHOD} ${D_STATUS} ${D_TYPE}\\e[0m\\n"\n'
+            '                    printf "\\e[36m  %s\\e[0m\\n" "$D_URL_SHORT"\n'
+            '                    # Body size and response header count\n'
+            '                    BODY_LEN=$(echo "$DETAIL" | jq -r \'.body | length // 0\')\n'
+            '                    BODY_KB=$(awk "BEGIN {printf \\"%.1f\\", $BODY_LEN / 1024}")\n'
+            '                    HDR_COUNT=$(echo "$DETAIL" | jq \'.responseHeaders | length // 0\')\n'
+            '                    BODY_ERR=$(echo "$DETAIL" | jq -r \'.bodyError // empty\')\n'
+            '                    if [ -n "$BODY_ERR" ]; then\n'
+            '                        printf "\\e[33m  body: %s\\e[0m\\n" "$BODY_ERR"\n'
+            '                    else\n'
+            '                        printf "\\e[36m  ${BODY_KB}KB body \\e[96m│\\e[36m ${HDR_COUNT} response headers"\n'
+            '                        if [ "$D_CACHED" = "true" ]; then\n'
+            '                            printf " (cached)"\n'
+            '                        fi\n'
+            '                        printf "\\e[0m\\n"\n'
+            '                    fi\n'
+            '                    if [ "$D_REMOTE" != "-" ]; then\n'
+            '                        printf "\\e[36m  %s\\e[0m\\n" "$D_REMOTE"\n'
+            '                    fi\n'
+            '                    # Timing summary\n'
+            '                    DNS_MS=$(echo "$DETAIL" | jq ".timing.dnsEndMs - .timing.dnsStartMs")\n'
+            '                    CONNECT_MS=$(echo "$DETAIL" | jq ".timing.connectEndMs - .timing.connectStartMs")\n'
+            '                    SSL_MS=$(echo "$DETAIL" | jq ".timing.sslEndMs - .timing.sslStartMs")\n'
+            '                    TTFB_MS=$(echo "$DETAIL" | jq ".timing.receiveHeadersStartMs - .timing.sendEndMs")\n'
+            '                    HAS_TIMING=$(echo "$DETAIL" | jq ".timing.sendEndMs > 0")\n'
+            '                    if [ "$HAS_TIMING" = "true" ]; then\n'
+            '                        DNS_I=$(printf "%.0f" "$DNS_MS")\n'
+            '                        CONN_I=$(printf "%.0f" "$CONNECT_MS")\n'
+            '                        SSL_I=$(printf "%.0f" "$SSL_MS")\n'
+            '                        TTFB_I=$(printf "%.0f" "$TTFB_MS")\n'
+            '                        printf "\\e[36m  dns ${DNS_I}ms \\e[96m│\\e[36m tcp ${CONN_I}ms \\e[96m│\\e[36m tls ${SSL_I}ms \\e[96m│\\e[36m ttfb ${TTFB_I}ms\\e[0m\\n"\n'
+            '                    fi\n'
+            '                else\n'
+            '                    printf "\\e[36m  ${KB}KB\\e[0m\\n"\n'
+            '                fi\n'
+            '                ;;\n'
+            '            body)\n'
+            '                printf "\\e[32m  Response body saved to network-body\\e[0m\\n"\n'
+            '                printf "\\e[36m  ${KB}KB\\e[0m\\n"\n'
+            '                ;;\n'
+            '            ws)\n'
+            '                printf "\\e[32m  WebSocket data saved to network.json\\e[0m\\n"\n'
+            '                printf "\\e[36m  ${KB}KB\\e[0m\\n"\n'
+            '                ;;\n'
+            '        esac\n'
+            '        printf "\\e[96m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\e[0m\\n"\n'
+            '        exit 0\n'
+            '    fi\n'
+            '    i=$((i + 1))\n'
+            'done\n'
+            '\n'
+            'echo "Error: network query timed out (${TIMEOUT}s). Use --timeout <seconds> to increase." >&2\n'
+            'exit 1\n'
+        )
+        script_path.chmod(
+            script_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     def _on_shutdown(self):
         self._tab_data.clear()

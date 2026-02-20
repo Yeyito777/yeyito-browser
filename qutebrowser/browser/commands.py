@@ -1967,6 +1967,107 @@ class CommandDispatcher:
             "No tab with ID {} found".format(tab_id))
 
     @cmdutils.register(instance='command-dispatcher', scope='window')
+    def network_list(self, tab_id: int):
+        """List all captured network requests for a tab.
+
+        Args:
+            tab_id: The tab ID to query.
+        """
+        tab_id_str = str(tab_id)
+
+        if self._tabbed_browser.tab_runtime.network_list(tab_id_str):
+            return
+
+        for win_id in objreg.window_registry:
+            if win_id == self._win_id:
+                continue
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            if tabbed_browser.tab_runtime.network_list(tab_id_str):
+                return
+
+        raise cmdutils.CommandError(
+            "No tab with ID {} found".format(tab_id))
+
+    @cmdutils.register(instance='command-dispatcher', scope='window')
+    def network_detail(self, tab_id: int, request_id: str):
+        """Get full headers, cookies, and timing for a network request.
+
+        Args:
+            tab_id: The tab ID to query.
+            request_id: The request ID to get details for.
+        """
+        tab_id_str = str(tab_id)
+
+        if self._tabbed_browser.tab_runtime.network_detail(
+                tab_id_str, request_id):
+            return
+
+        for win_id in objreg.window_registry:
+            if win_id == self._win_id:
+                continue
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            if tabbed_browser.tab_runtime.network_detail(
+                    tab_id_str, request_id):
+                return
+
+        raise cmdutils.CommandError(
+            "No tab with ID {} found".format(tab_id))
+
+    @cmdutils.register(instance='command-dispatcher', scope='window')
+    def network_body(self, tab_id: int, request_id: str):
+        """Get response body for a network request.
+
+        Args:
+            tab_id: The tab ID to query.
+            request_id: The request ID to get the body for.
+        """
+        tab_id_str = str(tab_id)
+
+        if self._tabbed_browser.tab_runtime.network_body(
+                tab_id_str, request_id):
+            return
+
+        for win_id in objreg.window_registry:
+            if win_id == self._win_id:
+                continue
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            if tabbed_browser.tab_runtime.network_body(
+                    tab_id_str, request_id):
+                return
+
+        raise cmdutils.CommandError(
+            "No tab with ID {} found".format(tab_id))
+
+    @cmdutils.register(instance='command-dispatcher', scope='window')
+    def network_ws_frames(self, tab_id: int, request_id: str):
+        """Get WebSocket frames for a connection.
+
+        Args:
+            tab_id: The tab ID to query.
+            request_id: The request ID of the WebSocket connection.
+        """
+        tab_id_str = str(tab_id)
+
+        if self._tabbed_browser.tab_runtime.network_ws_frames(
+                tab_id_str, request_id):
+            return
+
+        for win_id in objreg.window_registry:
+            if win_id == self._win_id:
+                continue
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            if tabbed_browser.tab_runtime.network_ws_frames(
+                    tab_id_str, request_id):
+                return
+
+        raise cmdutils.CommandError(
+            "No tab with ID {} found".format(tab_id))
+
+    @cmdutils.register(instance='command-dispatcher', scope='window')
     def grant_user_activation(self, tab_id: int):
         """Grant user activation to a tab's main frame.
 

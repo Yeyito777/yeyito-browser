@@ -15,8 +15,15 @@ State is held in-memory in `_tab_data` (dict of `tab_id str -> dict`) and flushe
     order                      # tab_ids in tab-bar order, one per line
     {tab_id}/
         tab-data.info          # all tab metadata, key: value format
+        console.sh             # executable script — JS eval in tab
+        console.log            # persistent JS console output
+        console-result         # appears after console.sh runs
         snapshot-dom.sh        # executable script — triggers DOM snapshot
         dom.html               # full page DOM (appears after snapshot-dom.sh runs)
+        network.sh             # executable script — query network data
+        network.json           # appears after network.sh list/ws query (JSON)
+        request-{id}.json      # appears after network.sh detail (JSON with body + headers)
+        network-body           # appears after network.sh body query (raw bytes)
 ```
 
 ### tab-data.info Format
@@ -105,10 +112,56 @@ The `--target tab-silent` flag prevents the qutebrowser window from raising or s
 cat ~/.runtime/qutebrowser-yeyito/runtime/tabs/0/dom.html
 ```
 
+## Network Inspection
+
+Each tab directory includes `network.sh`, a self-contained shell script that queries network request data buffered from Chromium's `ResourceLoadComplete` callback. Data is stored in-memory in a C++ `NetworkRequestBuffer` (max 1000 entries per tab, clears on navigation). Zero disk I/O until queried.
+
+For usage guide and examples, see **[network-inspection.md](network-inspection.md)**.
+For full technical reference (every file, function, line), see **[network-tab-tool.md](network-tab-tool.md)**.
+
+### Summary
+
+| Command | Status | Output file | Output |
+|---------|--------|-------------|--------|
+| `network.sh list` | Working | `network.json` | JSON with url, method, status, type, mimeType, size, cached for each request |
+| `network.sh detail <id>` | Working | `request-{id}.json` | C++ metadata + response body + response headers (via HTTP cache re-fetch) |
+| `network.sh body <id>` | Not yet implemented | `network-body` | Needs DevTools bridge |
+| `network.sh ws <id>` | Not yet implemented | `network.json` | Needs DevTools bridge |
+
+### IPC Commands
+
+Registered in `commands.py`. All use cross-window tab lookup (current window first, then others via `objreg.window_registry`).
+
+| Command | Args | Delegates to |
+|---------|------|-------------|
+| `:network-list` | `tab_id` | `TabRuntimeManager.network_list()` |
+| `:network-detail` | `tab_id`, `request_id` | `TabRuntimeManager.network_detail()` |
+| `:network-body` | `tab_id`, `request_id` | `TabRuntimeManager.network_body()` |
+| `:network-ws-frames` | `tab_id`, `request_id` | `TabRuntimeManager.network_ws_frames()` |
+
+### Quick Usage
+
+```bash
+# List all requests (saves to network.json)
+~/.runtime/qutebrowser-yeyito/runtime/tabs/0/network.sh list
+
+# Detail with timing + response body/headers (saves to request-685216.json)
+~/.runtime/qutebrowser-yeyito/runtime/tabs/0/network.sh detail 685216
+
+# Filter: only errors
+~/.runtime/qutebrowser-yeyito/runtime/tabs/0/network.sh list --errors
+
+# Filter: by type
+~/.runtime/qutebrowser-yeyito/runtime/tabs/0/network.sh list --type fetch
+
+# Filter: by URL pattern
+~/.runtime/qutebrowser-yeyito/runtime/tabs/0/network.sh list --url "api/"
+```
+
 ## Lifecycle
 
 1. **Init**: wipes `tabs/` with `shutil.rmtree` (handles crash leftovers), recreates it
-2. **Tab open**: `_on_new_tab` creates `{tab_id}/` dir, populates `tab-data.info`, writes `snapshot-dom.sh`, wires signals, calls `_update_indices`
+2. **Tab open**: `_on_new_tab` creates `{tab_id}/` dir, populates `tab-data.info`, writes `snapshot-dom.sh`, `console.sh`, `network.sh`, wires signals, calls `_update_indices`
 3. **Tab update**: signal fires, `_update_field` mutates `_tab_data[tid][key]`, `_write_tab` flushes to disk
 4. **Tab close**: `_on_tab_removed` pops from `_tab_data`, `rmtree`s the dir, calls `_update_indices`
 5. **Browser shutdown**: `_on_shutdown` clears `_tab_data`, `rmtree`s entire `tabs/`
@@ -142,8 +195,8 @@ awk -F': ' '/^load_status/{print $2}' ~/.runtime/qutebrowser-yeyito/runtime/tabs
 
 | File | Role |
 |------|------|
-| `qutebrowser/browser/tabruntime.py` | `TabRuntimeManager` class — all runtime tab logic, DOM snapshot |
-| `qutebrowser/browser/commands.py` | `:dom-snapshot` command (cross-window tab lookup) |
+| `qutebrowser/browser/tabruntime.py` | `TabRuntimeManager` class — all runtime tab logic, DOM snapshot, network queries |
+| `qutebrowser/browser/commands.py` | `:dom-snapshot`, `:network-list`, `:network-detail`, `:network-body`, `:network-ws-frames` commands (cross-window tab lookup) |
 | `qutebrowser/app.py` | `process_pos_args` — silent IPC `no_raise` support |
 | `qutebrowser/mainwindow/tabbedbrowser.py:24,247` | Import + instantiation (2 lines total) |
 | `qutebrowser/browser/browsertab.py` | `AbstractTab` — tab signals, `tab_id`, `is_private`, `win_id`, `data.pinned`, `audio` sub-API |

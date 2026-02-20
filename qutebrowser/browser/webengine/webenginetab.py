@@ -1435,6 +1435,12 @@ class WebEngineTab(browsertab.AbstractTab):
         else:
             self._widget.page().toHtml(callback)
 
+    def network_query(self, query_type, query_args, callback):
+        import json
+        args_json = json.dumps(query_args)
+        result = self._widget.page().networkQuery(query_type, args_json)
+        callback(result)
+
     def run_js_async(self, code, callback=None, *, world=None):
         if sip.isdeleted(self._widget):
             # https://github.com/qutebrowser/qutebrowser/issues/3895
