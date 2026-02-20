@@ -188,7 +188,7 @@ export QT_PLUGIN_PATH="${install_dir}/plugins\${QT_PLUGIN_PATH:+:\$QT_PLUGIN_PAT
 export QTWEBENGINEPROCESS_PATH="${install_dir}/lib/qt6/QtWebEngineProcess"
 export QTWEBENGINE_RESOURCES_PATH="${install_dir}/share/qt6/resources"
 export QTWEBENGINE_LOCALES_PATH="${install_dir}/share/qt6/translations/qtwebengine_locales"
-exec ${venv_dir}/bin/python -m qutebrowser --basedir /home/yeyito/.runtime/qutebrowser-yeyito "\$@"
+exec ${venv_dir}/bin/python -m qutebrowser "\$@"
 EOF
 chmod +x "${launcher_path}"
 
