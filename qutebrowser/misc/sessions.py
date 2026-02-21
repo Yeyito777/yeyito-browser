@@ -324,6 +324,21 @@ class SessionManager(QObject):
                     data['history'][-1]['active'] = True
             else:
                 data['history'].append(item_data)
+
+        if not data['history']:
+            # QWebEngineHistory may be empty if the tab hasn't finished loading.
+            # Fall back to tab.url() so the tab survives a crash/session restore.
+            url = tab.url()
+            if url.isValid() and url.scheme() not in ('', 'about'):
+                data['history'].append({
+                    'url': bytes(url.toEncoded()).decode('ascii'),
+                    'title': tab.title() or bytes(url.toEncoded()).decode('ascii'),
+                    'active': True,
+                    'pinned': tab.data.pinned,
+                    'scroll-pos': {'x': 0, 'y': 0},
+                    'zoom': 1.0,
+                })
+
         return data
 
     def _save_all(self, *, only_window=None, with_private=False, with_history=True):
