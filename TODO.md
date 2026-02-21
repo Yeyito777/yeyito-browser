@@ -17,3 +17,23 @@
 
 # Major aditions
 - Really think how I could add $/0/w/W/f/F and others while writing text in insert mode. Maybe a special mode? Like insert-normal mode?
+
+# Runtime tooling
+
+## Network detail (`network.sh detail`)
+- [x] C++ metadata (url, method, status, type, mimeType, timing, size, cached, netError, remoteEndpoint)
+- [x] Response body via JS `fetch({cache: "force-cache"})`
+- [x] Response headers via JS `fetch({cache: "force-cache"}).headers`
+- [x] Request headers for sub-resource requests (scripts, stylesheets, images, fonts, fetch/XHR)
+- [ ] Request headers for document/navigation requests (assembled in browser process via `BeginNavigationParams`, not forwarded to renderer)
+- [ ] Network-service-added request headers (Accept-Encoding, Host, Cookie — added after blink sends the request)
+- [ ] Request body (POST payloads — not captured by `ResourceLoadComplete`)
+- [ ] `set-cookie` response headers (stripped by `fetch().headers` per spec — needs C++ `HttpResponseHeaders` interception)
+- [ ] Response body/headers for cross-origin without CORS (fetch fails — needs C++ response interception)
+- [ ] Initiator (what triggered the request — not in `ResourceLoadComplete`, needs `Network.requestWillBeSent`)
+- [ ] Redirect chain individual hops (only `url` vs `originalUrl` captured — needs `NavigationHandle` redirect tracking)
+- [ ] Priority (not captured — needs `Network.resourceChangedPriority`)
+- [ ] WebSocket frames (separate protocol — stub exists, needs DevTools `Network.webSocketFrame*` events)
+
+### Testing
+After C++ changes, rebuild with `./install.sh --dirty`, then restart qutebrowser by sending `:restart` through the IPC socket (or just relaunch it). Navigate to a page with mixed resource types (e.g. any site with scripts, stylesheets, images). Run `network.sh list` to grab request IDs, then `network.sh detail <id>` on both a sub-resource (script/stylesheet) and a document request to verify the new field shows up where expected. Pipe the resulting `request-<id>.json` through `jq` to inspect the specific field you changed.
