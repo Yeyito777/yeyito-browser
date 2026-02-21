@@ -12,10 +12,10 @@ import stat
 import datetime
 from pathlib import Path
 
-from qutebrowser.qt.core import QObject, QUrl
+from qutebrowser.qt.core import QObject, QUrl, QTimer
 from qutebrowser.qt import sip
 
-from qutebrowser.utils import standarddir, usertypes
+from qutebrowser.utils import standarddir, usertypes, message
 
 
 class TabRuntimeManager(QObject):
@@ -59,6 +59,7 @@ class TabRuntimeManager(QObject):
         self._write_snapshot_script(tab_id)
         self._write_console_script(tab_id)
         self._write_network_script(tab_id)
+        self._write_command_script(tab_id)
 
         # Per-tab signal connections
         tab.url_changed.connect(
@@ -799,6 +800,189 @@ class TabRuntimeManager(QObject):
             'done\n'
             '\n'
             'echo "Error: network query timed out (${TIMEOUT}s). Use --timeout <seconds> to increase." >&2\n'
+            'exit 1\n'
+        )
+        script_path.chmod(
+            script_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    def command_eval(self, tab_id_str, command, wait_ms=0):
+        """Run a qutebrowser command and capture messages to command-result.
+
+        Hooks message.global_bridge.show_message to capture all info/warning/
+        error messages produced during execution, then writes a JSON result
+        file for the shell script to pick up.
+        """
+        from qutebrowser.commands.runners import CommandRunner
+
+        if tab_id_str not in self._tab_data:
+            return False
+
+        # Determine win_id from the tab
+        tab = self._find_tab(tab_id_str)
+        if tab is None:
+            return False
+
+        result_path = self._tabs_dir / tab_id_str / 'command-result'
+        captured = []
+
+        def _on_message(info):
+            captured.append({
+                'level': info.level.name,
+                'text': info.text,
+            })
+
+        def _finish():
+            try:
+                message.global_bridge.show_message.disconnect(_on_message)
+            except TypeError:
+                pass
+            has_error = any(m['level'] == 'error' for m in captured)
+            status = 'error' if has_error else 'ok'
+            result = {
+                'status': status,
+                'command': ':' + command.lstrip(':'),
+                'messages': captured,
+            }
+            try:
+                result_path.write_text(json.dumps(result, indent=2) + '\n')
+            except FileNotFoundError:
+                pass
+
+        message.global_bridge.show_message.connect(_on_message)
+
+        runner = CommandRunner(tab.win_id)
+        try:
+            runner.run(command, safely=True)
+        except Exception as e:
+            captured.append({
+                'level': 'error',
+                'text': str(e),
+            })
+
+        if wait_ms > 0:
+            QTimer.singleShot(wait_ms, _finish)
+        else:
+            _finish()
+
+        return True
+
+    def _write_command_script(self, tab_id):
+        """Write an executable shell script that runs qutebrowser commands."""
+        basedir = str(Path(standarddir.runtime()).parent)
+        runtime_dir = standarddir.runtime()
+        result_path = self._tabs_dir / tab_id / 'command-result'
+        script_path = self._tabs_dir / tab_id / 'command.sh'
+
+        # Compute the IPC socket path (mirrors ipc._get_socketname)
+        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
+        md5 = hashlib.md5(data_to_hash).hexdigest()
+        socket_path = Path(runtime_dir) / f'ipc-{md5}'
+
+        script_path.write_text(
+            '#!/bin/sh\n'
+            '\n'
+            '# Parse arguments\n'
+            'TIMEOUT=10\n'
+            'WAIT=0\n'
+            'CMD_ARGS=""\n'
+            'while [ $# -gt 0 ]; do\n'
+            '    case "$1" in\n'
+            '        --timeout)\n'
+            '            TIMEOUT="$2"\n'
+            '            shift 2\n'
+            '            ;;\n'
+            '        --timeout=*)\n'
+            '            TIMEOUT="${1#--timeout=}"\n'
+            '            shift\n'
+            '            ;;\n'
+            '        --wait)\n'
+            '            WAIT="$2"\n'
+            '            shift 2\n'
+            '            ;;\n'
+            '        --wait=*)\n'
+            '            WAIT="${1#--wait=}"\n'
+            '            shift\n'
+            '            ;;\n'
+            '        -h|--help)\n'
+            '            echo "Usage: command.sh [--timeout <seconds>] [--wait <ms>] <command> [args...]" >&2\n'
+            '            echo "" >&2\n'
+            '            echo "Run a qutebrowser command and capture output." >&2\n'
+            '            echo "" >&2\n'
+            '            echo "Options:" >&2\n'
+            '            echo "  --timeout <seconds>  Poll timeout (default: 10)" >&2\n'
+            '            echo "  --wait <ms>          Async capture window (default: 0)" >&2\n'
+            '            echo "" >&2\n'
+            '            echo "Examples:" >&2\n'
+            '            echo "  command.sh config-source" >&2\n'
+            '            echo "  command.sh open -t https://example.com" >&2\n'
+            '            echo "  command.sh set content.javascript.enabled false" >&2\n'
+            '            echo "  command.sh --wait 500 config-source" >&2\n'
+            '            exit 0\n'
+            '            ;;\n'
+            '        *)\n'
+            '            if [ -z "$CMD_ARGS" ]; then\n'
+            '                CMD_ARGS="$1"\n'
+            '            else\n'
+            '                CMD_ARGS="$CMD_ARGS $1"\n'
+            '            fi\n'
+            '            shift\n'
+            '            ;;\n'
+            '    esac\n'
+            'done\n'
+            '\n'
+            'if [ -z "$CMD_ARGS" ]; then\n'
+            '    echo "Usage: command.sh [--timeout <seconds>] [--wait <ms>] <command> [args...]" >&2\n'
+            '    exit 1\n'
+            'fi\n'
+            '\n'
+            '# Prepend : if not already present\n'
+            'case "$CMD_ARGS" in\n'
+            '    :*) ;;\n'
+            '    *)  CMD_ARGS=":$CMD_ARGS" ;;\n'
+            'esac\n'
+            '\n'
+            f'SOCKET="{socket_path}"\n'
+            f'RESULT_FILE="{result_path}"\n'
+            f'TAB_ID="{tab_id}"\n'
+            'INTERVAL=0.5\n'
+            'ATTEMPTS=$(awk "BEGIN {printf \\"%d\\", $TIMEOUT / $INTERVAL}")\n'
+            '\n'
+            'if [ ! -S "$SOCKET" ]; then\n'
+            '    echo "Error: IPC socket not found (is qutebrowser running?)" >&2\n'
+            '    exit 1\n'
+            'fi\n'
+            '\n'
+            'rm -f "$RESULT_FILE"\n'
+            '\n'
+            '# Escape backslashes and double quotes for JSON embedding\n'
+            'CMD_ESC=$(printf \'%s\' "$CMD_ARGS" | sed \'s/\\\\/\\\\\\\\/g; s/"/\\\\"/g\')\n'
+            'PAYLOAD=$(printf \'{"args":[":command-eval %s %s %s"],'
+            '"target_arg":"tab-silent","protocol_version":1}\''
+            ' "$TAB_ID" "$WAIT" "$CMD_ESC")\n'
+            'printf \'%s\\n\' "$PAYLOAD" | socat - UNIX-CONNECT:"$SOCKET"\n'
+            '\n'
+            'i=0\n'
+            'while [ $i -lt $ATTEMPTS ]; do\n'
+            '    sleep $INTERVAL\n'
+            '    if [ -f "$RESULT_FILE" ]; then\n'
+            '        # Parse and format output\n'
+            '        if command -v jq >/dev/null 2>&1; then\n'
+            '            STATUS=$(jq -r .status "$RESULT_FILE")\n'
+            '            COMMAND=$(jq -r .command "$RESULT_FILE")\n'
+            '            printf "%s — %s\\n" "$COMMAND" "$STATUS"\n'
+            '            jq -r \'.messages[] | "[\\(.level)] \\(.text)"\' "$RESULT_FILE"\n'
+            '            if [ "$STATUS" = "error" ]; then\n'
+            '                exit 1\n'
+            '            fi\n'
+            '        else\n'
+            '            cat "$RESULT_FILE"\n'
+            '        fi\n'
+            '        exit 0\n'
+            '    fi\n'
+            '    i=$((i + 1))\n'
+            'done\n'
+            '\n'
+            'echo "Error: command timed out (${TIMEOUT}s). Use --timeout <seconds> to increase." >&2\n'
             'exit 1\n'
         )
         script_path.chmod(

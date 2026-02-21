@@ -12,6 +12,7 @@ User configuration: settings, bookmarks, scripts.
 | `autoconfig.yml` | Auto-saved settings from `:set` commands |
 | `quickmarks` | Quickmark name→URL mappings |
 | `bookmarks/urls` | Bookmarks file |
+| `extensions/` | Chrome extensions (unpacked directories with manifest.json) |
 | `greasemonkey/` | User-installed Greasemonkey scripts |
 | `userscripts/` | Custom userscripts (invoked via `:spawn`) |
 | `js/` | Custom JS files (for `:jseval -f`) |

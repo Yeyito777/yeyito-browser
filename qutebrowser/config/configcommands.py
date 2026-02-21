@@ -428,6 +428,13 @@ class ConfigCommands:
         except configexc.ConfigFileErrors as e:
             raise cmdutils.CommandError(e)
 
+        # Load any extensions registered by the (re-)executed config.py
+        try:
+            from qutebrowser.browser.webengine import webenginesettings
+            webenginesettings.reload_extensions()
+        except ImportError:
+            pass  # QtWebEngine not available
+
     @cmdutils.register(instance='config-commands')
     def config_edit(self, no_source: bool = False) -> None:
         """Open the config.py file in the editor.

@@ -88,6 +88,52 @@ def session(*, info=None):
     return model
 
 
+def extensions_detail(*, info=None):
+    """A CompletionModel for :extensions detail level."""
+    utils.unused(info)
+    model = completionmodel.CompletionModel(column_widths=(30, 70, 0))
+    options = [
+        ("verbose", "Show Chromium extension IDs"),
+    ]
+    model.add_category(listcategory.ListCategory("Options", options))
+    return model
+
+
+def extension(*, info=None):
+    """A CompletionModel filled with installed extension names."""
+    import os
+    import json
+    from qutebrowser.utils import standarddir
+    utils.unused(info)
+    model = completionmodel.CompletionModel(column_widths=(30, 70, 0))
+    ext_dir = os.path.join(standarddir.config(), 'extensions')
+    if os.path.isdir(ext_dir):
+        items = []
+        for entry in sorted(os.scandir(ext_dir), key=lambda e: e.name):
+            if not entry.is_dir():
+                continue
+            manifest_path = os.path.join(entry.path, 'manifest.json')
+            if not os.path.isfile(manifest_path):
+                continue
+            # Read display name from manifest
+            desc = ''
+            try:
+                with open(manifest_path) as f:
+                    manifest = json.load(f)
+                name = manifest.get('name', '')
+                if name.startswith('__MSG_') and name.endswith('__'):
+                    name = manifest.get('short_name', '')
+                if name.startswith('__MSG_') and name.endswith('__'):
+                    name = ''
+                version = manifest.get('version', '')
+                desc = f"{name} {version}".strip() if name else version
+            except (OSError, ValueError):
+                pass
+            items.append((entry.name, desc))
+        model.add_category(listcategory.ListCategory("Extensions", items))
+    return model
+
+
 def recovery_session(*, info=None):
     """A CompletionModel filled with recovery session names."""
     import os

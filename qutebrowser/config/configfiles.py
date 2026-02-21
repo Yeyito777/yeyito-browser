@@ -33,6 +33,16 @@ if TYPE_CHECKING:
 # The StateConfig instance
 state = cast('StateConfig', None)
 
+# Extensions registered by config.py, consumed at profile init time.
+_pending_extensions: list[str] = []
+
+
+def get_pending_extensions() -> list[str]:
+    """Return and clear the list of extension paths registered by config.py."""
+    extensions = _pending_extensions.copy()
+    _pending_extensions.clear()
+    return extensions
+
 
 _SettingsType = dict[str, dict[str, Any]]
 
@@ -785,6 +795,46 @@ class ConfigAPI:
             read_config_py(filename)
         except configexc.ConfigFileErrors as e:
             self.errors += e.errors
+
+    def load_extension(self, path: str) -> None:
+        """Register a Chrome extension to be loaded at profile init.
+
+        Args:
+            path: Path to an unpacked extension directory containing
+                  manifest.json. Relative paths are resolved against configdir.
+        """
+        if not os.path.isabs(path):
+            path = str(self.configdir / path)
+        if not os.path.isdir(path):
+            with self._handle_error(f"loading extension '{path}'"):
+                raise configexc.Error(f"Extension directory not found: {path}")
+            return
+        manifest = os.path.join(path, 'manifest.json')
+        if not os.path.isfile(manifest):
+            with self._handle_error(f"loading extension '{path}'"):
+                raise configexc.Error(f"No manifest.json in: {path}")
+            return
+        _pending_extensions.append(path)
+
+    def load_extensions(self, directory: str) -> None:
+        """Register all Chrome extensions in a directory to be loaded.
+
+        Each subdirectory containing a manifest.json is treated as an
+        extension. Relative paths are resolved against configdir.
+
+        Args:
+            directory: Path to the extensions directory
+                       (e.g. 'extensions/').
+        """
+        if not os.path.isabs(directory):
+            directory = str(self.configdir / directory)
+        if not os.path.isdir(directory):
+            return  # silently skip if dir doesn't exist yet
+        for entry in os.scandir(directory):
+            if entry.is_dir():
+                manifest = os.path.join(entry.path, 'manifest.json')
+                if os.path.isfile(manifest):
+                    _pending_extensions.append(entry.path)
 
     @contextlib.contextmanager
     def pattern(self, pattern: str) -> Iterator[config.ConfigContainer]:

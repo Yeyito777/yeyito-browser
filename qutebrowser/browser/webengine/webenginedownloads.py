@@ -14,9 +14,9 @@ from qutebrowser.qt import machinery
 from qutebrowser.qt.core import pyqtSlot, Qt, QUrl, QObject
 from qutebrowser.qt.webenginecore import QWebEngineDownloadRequest
 
-from qutebrowser.browser import downloads, pdfjs
-from qutebrowser.utils import (debug, usertypes, message, log, objreg, urlutils,
-                               utils, version)
+from qutebrowser.browser import crx, downloads, pdfjs
+from qutebrowser.utils import (debug, usertypes, message, log, objreg, standarddir,
+                               urlutils, utils, version)
 
 
 def _find_tab_for_page(page):
@@ -77,6 +77,41 @@ def _unique_path(tmpdir, basename):
         if not os.path.exists(path):
             return path
     return path
+
+
+def _is_crx_download(mime_type, filename):
+    """Check if a download is a Chrome extension CRX file."""
+    if mime_type == 'application/x-chrome-extension':
+        return True
+    if filename and filename.endswith('.crx'):
+        return True
+    return False
+
+
+def _crx_download_finished(tmp_path):
+    """Process a completed CRX download: extract and load the extension."""
+    extensions_dir = os.path.join(standarddir.config(), 'extensions')
+    os.makedirs(extensions_dir, exist_ok=True)
+
+    try:
+        ext_dir = crx.extract_crx(tmp_path, extensions_dir)
+    except (ValueError, OSError, KeyError) as e:
+        message.error(f"Failed to install extension: {e}")
+        return
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    ext_name = os.path.basename(ext_dir)
+    log.misc.debug(f"CRX extracted to: {ext_dir}")
+
+    # Load the extension into the running profile immediately
+    from qutebrowser.browser.webengine import webenginesettings
+    webenginesettings.load_extension_now(ext_dir)
+
+    message.info(f"Extension installed: {ext_name}")
 
 
 class DownloadItem(downloads.AbstractDownloadItem):
@@ -335,6 +370,24 @@ class DownloadManager(downloads.AbstractDownloadManager):
                 url, fallback='qutebrowser-download')
         else:
             suggested_filename = _strip_suffix(qt_filename)
+
+        # CRX extension download: download to temp, extract, load
+        if _is_crx_download(mime_type, qt_filename):
+            tmpdir = downloads.temp_download_manager.get_tmpdir().name
+            basename = suggested_filename or 'extension.crx'
+            if not basename.endswith('.crx'):
+                basename += '.crx'
+            tmp_path = _unique_path(tmpdir, basename)
+
+            download = DownloadItem(qt_item, manager=self)
+            self._init_item(download, auto_remove=True,
+                            suggested_filename=basename)
+            download.finished.connect(
+                functools.partial(_crx_download_finished, tmp_path))
+            target = downloads.FileDownloadTarget(tmp_path,
+                                                  force_overwrite=True)
+            download.set_target(target)
+            return
 
         use_pdfjs = pdfjs.should_use_pdfjs(mime_type, url)
 

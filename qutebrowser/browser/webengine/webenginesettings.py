@@ -42,6 +42,7 @@ parsed_user_agent: Optional[websettings.UserAgent] = None
 _qute_scheme_handler = cast(webenginequtescheme.QuteSchemeHandler, None)
 _req_interceptor = cast('interceptor.RequestInterceptor', None)
 _download_manager = cast(webenginedownloads.DownloadManager, None)
+_extension_signal_connected = False
 
 
 class _SettingsWrapper:
@@ -421,6 +422,98 @@ def _init_profile(profile: QWebEngineProfile) -> None:
 
     _global_settings.init_settings()
     _maybe_disable_hangouts_extension(profile)
+    _load_config_extensions(profile)
+
+
+def _get_extension_manager(profile: QWebEngineProfile):
+    """Get the extension manager for a profile, or None if unavailable."""
+    if not machinery.IS_QT6:
+        return None
+    try:
+        ext_manager = profile.extensionManager()
+    except AttributeError:
+        return None  # requires QtWebEngine 6.10+
+    return ext_manager
+
+
+def _on_extension_load_finished(info) -> None:
+    """Handle extension load completion — log result."""
+    if info.error():
+        log.misc.error(f"Extension load failed: {info.error()}")
+        message.error(f"Extension failed: {info.error()}")
+        return
+    log.misc.debug(f"Extension loaded: {info.name()} ({info.id()})")
+
+
+def _ensure_extension_signal(ext_manager) -> None:
+    """Connect the loadFinished signal exactly once."""
+    global _extension_signal_connected
+    if not _extension_signal_connected:
+        ext_manager.loadFinished.connect(_on_extension_load_finished)
+        _extension_signal_connected = True
+
+
+def _load_config_extensions(profile: QWebEngineProfile) -> None:
+    """Load extensions registered by config.py via config.load_extension(s)."""
+    from qutebrowser.config import configfiles
+
+    pending = configfiles.get_pending_extensions()
+    if not pending:
+        return
+
+    ext_manager = _get_extension_manager(profile)
+    if ext_manager is None:
+        log.misc.warning("Extension loading requires QtWebEngine 6.10+")
+        return
+
+    _ensure_extension_signal(ext_manager)
+
+    for ext_path in pending:
+        log.misc.debug(f"Loading extension from config: {ext_path}")
+        ext_manager.loadExtension(ext_path)
+
+
+def load_extension_now(ext_path: str) -> None:
+    """Load a single extension immediately (e.g. after CRX download).
+
+    Called from webenginedownloads when a CRX is extracted.
+    """
+    ext_manager = _get_extension_manager(default_profile)
+    if ext_manager is None:
+        log.misc.warning("Extension loading requires QtWebEngine 6.10+")
+        return
+    _ensure_extension_signal(ext_manager)
+    log.misc.debug(f"Loading extension: {ext_path}")
+    ext_manager.loadExtension(ext_path)
+
+
+def reload_extensions() -> None:
+    """Reload extensions after :config-source re-executes config.py."""
+    from qutebrowser.config import configfiles
+
+    pending = configfiles.get_pending_extensions()
+    if not pending:
+        return
+
+    ext_manager = _get_extension_manager(default_profile)
+    if ext_manager is None:
+        return
+
+    _ensure_extension_signal(ext_manager)
+
+    # Get already-loaded extension paths to avoid reloading them
+    # (ReloadExtension crashes in Qt)
+    loaded_paths = set()
+    for info in ext_manager.extensions():
+        if info.path():
+            loaded_paths.add(info.path())
+
+    for ext_path in pending:
+        if ext_path in loaded_paths:
+            log.misc.debug(f"Extension already loaded, skipping: {ext_path}")
+            continue
+        log.misc.debug(f"Loading extension: {ext_path}")
+        ext_manager.loadExtension(ext_path)
 
 
 def _maybe_disable_hangouts_extension(profile: QWebEngineProfile) -> None:

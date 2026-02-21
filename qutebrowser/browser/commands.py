@@ -2067,6 +2067,36 @@ class CommandDispatcher:
         raise cmdutils.CommandError(
             "No tab with ID {} found".format(tab_id))
 
+    @cmdutils.register(instance='command-dispatcher', scope='window',
+                       maxsplit=2, no_cmd_split=True)
+    def command_eval(self, tab_id: int, wait_ms: int, command: str):
+        """Run a qutebrowser command and capture messages to command-result.
+
+        Args:
+            tab_id: The tab ID (used to locate the runtime directory).
+            wait_ms: Milliseconds to wait for async messages before writing result.
+            command: The qutebrowser command string to execute.
+        """
+        tab_id_str = str(tab_id)
+
+        # Try current window first
+        if self._tabbed_browser.tab_runtime.command_eval(
+                tab_id_str, command, wait_ms):
+            return
+
+        # Search other windows
+        for win_id in objreg.window_registry:
+            if win_id == self._win_id:
+                continue
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            if tabbed_browser.tab_runtime.command_eval(
+                    tab_id_str, command, wait_ms):
+                return
+
+        raise cmdutils.CommandError(
+            "No tab with ID {} found".format(tab_id))
+
     @cmdutils.register(instance='command-dispatcher', scope='window')
     def grant_user_activation(self, tab_id: int):
         """Grant user activation to a tab's main frame.

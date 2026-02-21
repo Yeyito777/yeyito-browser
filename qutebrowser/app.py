@@ -42,7 +42,8 @@ from qutebrowser.commands import runners
 from qutebrowser.config import (config, websettings, configfiles, configinit,
                                 qtargs)
 from qutebrowser.browser import (urlmarks, history, browsertab,
-                                 qtnetworkdownloads, downloads, greasemonkey)
+                                 qtnetworkdownloads, downloads, greasemonkey,
+                                 extensions)
 from qutebrowser.browser.network import proxy
 from qutebrowser.browser.webkit import cookies, cache
 from qutebrowser.browser.webkit.network import networkmanager
