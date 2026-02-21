@@ -25,7 +25,7 @@
 - [x] Response body via JS `fetch({cache: "force-cache"})`
 - [x] Response headers via JS `fetch({cache: "force-cache"}).headers`
 - [x] Request headers for sub-resource requests (scripts, stylesheets, images, fonts, fetch/XHR)
-- [ ] Request headers for document/navigation requests (assembled in browser process via `BeginNavigationParams`, not forwarded to renderer)
+- [x] Request headers for document/navigation requests (captured from `NavigationHandle::GetRequestHeaders()` in `DidFinishNavigation`)
 - [ ] Network-service-added request headers (Accept-Encoding, Host, Cookie — added after blink sends the request)
 - [ ] Request body (POST payloads — not captured by `ResourceLoadComplete`)
 - [ ] `set-cookie` response headers (stripped by `fetch().headers` per spec — needs C++ `HttpResponseHeaders` interception)

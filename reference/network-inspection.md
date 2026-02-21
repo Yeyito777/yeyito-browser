@@ -234,13 +234,13 @@ The `type` field in request entries maps from Chromium's `RequestDestination` en
 
 The data comes from Chromium's `ResourceLoadComplete` callback, which fires for every completed resource load. This is the same data source Chrome uses for its Network panel resource summary.
 
-**Available via C++ buffer**: URL, method, status, resource type, MIME type, body size, total bytes, cache status, network error code, DNS/TCP/TLS/send/TTFB timing, remote IP:port, original URL (before redirects), request headers (sub-resource requests only — see below).
+**Available via C++ buffer**: URL, method, status, resource type, MIME type, body size, total bytes, cache status, network error code, DNS/TCP/TLS/send/TTFB timing, remote IP:port, original URL (before redirects), request headers.
 
 **Available via JS fetch (detail only)**: response headers, response body text (for same-origin and CORS-enabled resources).
 
 **Not available**: request body (POST payloads), `set-cookie` headers (stripped by `fetch().headers` per spec), cookies, WebSocket frames, request initiator, redirect chain (individual hops).
 
-**Request headers caveat**: Request headers are captured for sub-resource requests (scripts, stylesheets, images, fonts, fetch/XHR, etc.) but NOT for document/navigation requests. This is a Chromium architectural limitation — sub-resources go through `resource_request_sender.cc` where blink's request headers are accessible, while document requests go through `navigation_body_loader.cc` where the headers are assembled in the browser process and not forwarded to the renderer's `ResourceLoadComplete` callback. The `requestHeaders` field is omitted from the JSON when empty.
+**Request headers note**: Request headers are captured from two sources — sub-resource requests get headers from the renderer via Mojo IPC (`ResourceLoadInfo.request_headers`), while document/navigation requests get headers from the browser process via `NavigationHandle::GetRequestHeaders()`. Both sources capture blink-set headers (User-Agent, Accept, sec-ch-ua, Upgrade-Insecure-Requests, etc.) but NOT network-service-added headers (Accept-Encoding, Host, Cookie) which are added later in the network stack.
 
 ## Error Handling
 

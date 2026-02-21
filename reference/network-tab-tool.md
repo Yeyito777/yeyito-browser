@@ -32,9 +32,10 @@ User runs: network.sh list
 |------|-------|------|
 | `qtwebengine/src/core/net/network_request_buffer.h` | 1–66 | `NetworkRequestEntry` struct + `NetworkRequestBuffer` class definition |
 | `qtwebengine/src/core/net/network_request_buffer.cpp` | 1–97 | JSON serialization (`toSummaryJson`, `toDetailJson`), buffer management (`addEntry`, `clear`, `queryList`, `queryDetail`) |
-| `qtwebengine/src/core/web_contents_delegate_qt.h` | 12,153,223 | `#include`, `networkBuffer()` accessor, `m_networkBuffer` member |
-| `qtwebengine/src/core/web_contents_delegate_qt.cpp` | 942–1038 | `requestDestinationToType()`, `timeDeltaMs()`, `ResourceLoadComplete()` populator |
-| `qtwebengine/src/core/web_contents_delegate_qt.cpp` | 481–483 | `PrimaryPageChanged()` — `m_networkBuffer.clear()` |
+| `qtwebengine/src/core/web_contents_delegate_qt.h` | 12,153,223 | `#include`, `networkBuffer()` accessor, `m_networkBuffer`, `m_pendingNavRequestHeaders` members |
+| `qtwebengine/src/core/web_contents_delegate_qt.cpp` | 942–1050 | `requestDestinationToType()`, `timeDeltaMs()`, `ResourceLoadComplete()` populator |
+| `qtwebengine/src/core/web_contents_delegate_qt.cpp` | 435–445 | `DidFinishNavigation()` — captures navigation request headers into `m_pendingNavRequestHeaders` |
+| `qtwebengine/src/core/web_contents_delegate_qt.cpp` | 491–493 | `PrimaryPageChanged()` — `m_networkBuffer.clear()` |
 | `qtwebengine/src/core/web_contents_adapter.h` | 148 | `networkQuery()` declaration |
 | `qtwebengine/src/core/web_contents_adapter.cpp` | 1111–1143 | `networkQuery()` — dispatcher for list/detail/body/ws/headers/cookies |
 | `qtwebengine/src/core/api/qwebenginepage.h` | 292 | `networkQuery()` public API declaration |
@@ -185,8 +186,9 @@ Flow:
    - `load_timing_info.connect_timing.ssl_start/end` — TLS
    - `load_timing_info.send_start/end` — request sent
    - `load_timing_info.receive_headers_start/end` — response headers
-5. **Lines 1037–1040**: Copies request headers from `resource_load_info.request_headers` (a `flat_map<string, string>`) into `entry.requestHeaders` as a `QJsonObject`. Only sub-resource requests have headers populated — document/navigation requests arrive with an empty map due to Chromium's architecture (see Mojo struct section).
-6. **Line 1042**: Moves entry into buffer
+5. **Lines 1038–1040**: Copies request headers from `resource_load_info.request_headers` (a `flat_map<string, string>`) into `entry.requestHeaders` as a `QJsonObject`. Populated for sub-resource requests; empty for document requests (filled in next step).
+6. **Lines 1041–1045**: For document requests with empty `requestHeaders`, merges headers from `m_pendingNavRequestHeaders` — populated earlier by `DidFinishNavigation` from `NavigationHandle::GetRequestHeaders()`.
+7. **Line 1047**: Moves entry into buffer
 
 ### PrimaryPageChanged (`web_contents_delegate_qt.cpp:481–483`)
 
@@ -492,17 +494,17 @@ The `detail` subcommand now combines C++ metadata with JS-fetched response data:
 | `responseHeaders` | JS `fetch({cache: "force-cache"}).headers` |
 | `body` (full response text) | JS `fetch({cache: "force-cache"}).text()` |
 
-**Available for sub-resource requests only:**
+**Available per request (two sources):**
 
 | Field | Source | Note |
 |-------|--------|------|
-| `requestHeaders` | C++ NetworkRequestBuffer (from Mojo IPC `request_headers`) | Only populated for sub-resource requests (scripts, stylesheets, images, fonts, fetch/XHR). Document/navigation requests have an empty map — their headers are assembled in the browser process via `BeginNavigationParams` and not forwarded to the renderer's `ResourceLoadComplete` callback. Headers include blink-set values like Accept, User-Agent, sec-ch-ua, etc. Network-service-added headers (Accept-Encoding, Host) are NOT included. |
+| `requestHeaders` | Sub-resources: Mojo IPC `request_headers` from renderer. Documents: `NavigationHandle::GetRequestHeaders()` from browser process (`DidFinishNavigation`). | Both capture blink-set headers (User-Agent, Accept, sec-ch-ua, Upgrade-Insecure-Requests, etc.). Network-service-added headers (Accept-Encoding, Host, Cookie) are NOT included — they're added later in the network stack. |
 
 **Not available** (would require C++ changes or DevTools bridge):
 
 | Feature | Why | Workaround |
 |---------|-----|------------|
-| Request headers (document requests) | Navigation headers assembled in browser process, not forwarded to renderer | Would need `NavigationHandle` or DevTools `Network.requestWillBeSentExtraInfo` |
+| Network-service-added request headers (Accept-Encoding, Host, Cookie) | Added by the network service after blink/NavigationHandle assembles the request | Would need interception deeper in the network stack |
 | Request body (POST payloads) | Not captured by `ResourceLoadComplete` | None — data doesn't reach the observer |
 | `set-cookie` headers | Stripped by `fetch().headers` per spec | Would need C++ `HttpResponseHeaders` interception |
 | Redirect chain (individual hops) | Only `url` vs `originalUrl` captured | Would need `NavigationHandle` redirect tracking |
