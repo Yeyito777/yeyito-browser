@@ -66,6 +66,11 @@ else
     ninja -C "${webengine_build}" -j$(nproc)
 
     echo "[+] Installing to ${install_dir}..."
+    # Unlink old shared libraries and renderer binary before installing so that
+    # a running qutebrowser keeps the old inodes alive via mmap. ninja install
+    # then creates fresh files with new inodes — no in-place overwrites.
+    find "${install_dir}/lib" -name "libQt6WebEngine*.so*" -type f -delete 2>/dev/null || true
+    rm -f "${install_dir}/lib/qt6/QtWebEngineProcess" 2>/dev/null || true
     ninja -C "${webengine_build}" install
 
     # Record the commit we just built
