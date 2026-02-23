@@ -328,7 +328,11 @@ class SessionManager(QObject):
         if not data['history']:
             # QWebEngineHistory may be empty if the tab hasn't finished loading.
             # Fall back to tab.url() so the tab survives a crash/session restore.
+            # Try requestedUrl() too — background tabs that haven't committed
+            # their navigation still have the URL that was requested.
             url = tab.url()
+            if not url.isValid() or url.scheme() in ('', 'about'):
+                url = tab.url(requested=True)
             if url.isValid() and url.scheme() not in ('', 'about'):
                 data['history'].append({
                     'url': bytes(url.toEncoded()).decode('ascii'),

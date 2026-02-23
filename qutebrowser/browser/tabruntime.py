@@ -12,7 +12,7 @@ import stat
 import datetime
 from pathlib import Path
 
-from qutebrowser.qt.core import QObject, QUrl, QTimer
+from qutebrowser.qt.core import QObject, QTimer
 from qutebrowser.qt import sip
 
 from qutebrowser.utils import standarddir, usertypes, message
@@ -60,6 +60,7 @@ class TabRuntimeManager(QObject):
         self._write_console_script(tab_id)
         self._write_network_script(tab_id)
         self._write_command_script(tab_id)
+        self._write_screenshot_script(tab_id)
 
         # Per-tab signal connections
         tab.url_changed.connect(
@@ -420,6 +421,92 @@ class TabRuntimeManager(QObject):
             if str(t.tab_id) == tab_id_str:
                 return t
         return None
+
+    def screenshot_tab(self, tab_id_str, window_mode=False):
+        """Capture a screenshot of any tab at full screen resolution.
+
+        For background tabs, the target must become the current widget in
+        QStackedLayout so Qt's render loop sends BeginFrame to its compositor.
+        To avoid disrupting the user:
+
+        1. C++ focus suppression (s_suppressFocusCount) blocks Chromium-level
+           focus notifications AND keyboard/shortcut forwarding in the
+           QQuickItem delegate, so the tab switch is invisible to renderers.
+        2. The original tab is immediately re-shown and raised on top, keeping
+           Qt focus and keyboard input on the correct widget.
+        """
+        tab = self._find_tab(tab_id_str)
+        if tab is None:
+            return False
+
+        screenshot_path = self._tabs_dir / tab_id_str / 'screenshot.png'
+
+        if window_mode:
+            main_window = self._tabbed_browser.window()
+            pic = main_window.grab()
+            if pic is not None and not pic.isNull():
+                pic.save(str(screenshot_path))
+            return True
+
+        from qutebrowser.qt.widgets import QApplication
+        from qutebrowser.qt.core import QSize
+        from qutebrowser.qt.webenginecore import QWebEnginePage
+
+        # Full-screen resolution from primary monitor
+        main_window = self._tabbed_browser.window()
+        screen = main_window.screen() or QApplication.primaryScreen()
+        size = screen.size()
+
+        tab_widget = self._tabbed_browser.widget
+        original_idx = tab_widget.currentIndex()
+        target_idx = tab_widget.indexOf(tab)
+        if target_idx < 0:
+            return False
+
+        is_background = (target_idx != original_idx)
+        original_view = tab_widget.widget(original_idx) if is_background else None
+
+        if is_background:
+            # 1. Suppress focus/keyboard at C++ level (delegate item + client)
+            QWebEnginePage.suppressFocusNotifications()
+
+            # 2. Save the widget that currently has keyboard focus
+            focused_widget = QApplication.focusWidget()
+
+            # 3. Block qutebrowser's tab-change handler
+            tab_widget.blockSignals(True)
+
+            # 4. Switch stacked layout to target — it now gets BeginFrame
+            #    (original is hidden by QStackedLayout, target is shown)
+            tab_widget.setCurrentIndex(target_idx)
+
+            # 5. Re-show the original tab on top — BOTH tabs are now visible
+            #    and rendering, but the original covers the target visually.
+            #    Since original is visible again, setFocus() works.
+            original_view.show()
+            original_view.raise_()
+
+            # 6. Restore Qt focus to the original tab's focused widget
+            if focused_widget is not None:
+                focused_widget.setFocus()
+
+        def _on_result(data):
+            if is_background:
+                # Restore stacked layout: original becomes current again,
+                # target gets hidden.  Original was already visible + raised.
+                tab_widget.setCurrentIndex(original_idx)
+                tab_widget.blockSignals(False)
+                QWebEnginePage.restoreFocusNotifications()
+
+            if data and len(data) > 0:
+                try:
+                    screenshot_path.write_bytes(bytes(data))
+                except FileNotFoundError:
+                    pass
+
+        tab._widget.page().captureScreenshot(
+            QSize(size.width(), size.height()), _on_result)
+        return True
 
     def network_list(self, tab_id_str):
         """Query all captured network requests for a tab."""
@@ -983,6 +1070,98 @@ class TabRuntimeManager(QObject):
             'done\n'
             '\n'
             'echo "Error: command timed out (${TIMEOUT}s). Use --timeout <seconds> to increase." >&2\n'
+            'exit 1\n'
+        )
+        script_path.chmod(
+            script_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    def _write_screenshot_script(self, tab_id):
+        """Write an executable shell script that captures a tab screenshot."""
+        basedir = str(Path(standarddir.runtime()).parent)
+        runtime_dir = standarddir.runtime()
+        screenshot_path = self._tabs_dir / tab_id / 'screenshot.png'
+        script_path = self._tabs_dir / tab_id / 'screenshot.sh'
+
+        # Compute the IPC socket path (mirrors ipc._get_socketname)
+        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
+        md5 = hashlib.md5(data_to_hash).hexdigest()
+        socket_path = Path(runtime_dir) / f'ipc-{md5}'
+
+        script_path.write_text(
+            '#!/bin/sh\n'
+            '\n'
+            '# Parse arguments\n'
+            'TIMEOUT=10\n'
+            'WINDOW=0\n'
+            'while [ $# -gt 0 ]; do\n'
+            '    case "$1" in\n'
+            '        --window)\n'
+            '            WINDOW=1\n'
+            '            shift\n'
+            '            ;;\n'
+            '        --timeout)\n'
+            '            TIMEOUT="$2"\n'
+            '            shift 2\n'
+            '            ;;\n'
+            '        --timeout=*)\n'
+            '            TIMEOUT="${1#--timeout=}"\n'
+            '            shift\n'
+            '            ;;\n'
+            '        -h|--help)\n'
+            '            echo "Usage: screenshot.sh [--window] [--timeout <s>]" >&2\n'
+            '            echo "" >&2\n'
+            '            echo "Options:" >&2\n'
+            '            echo "  --window              Grab the whole window instead of tab content" >&2\n'
+            '            echo "  --timeout <seconds>   Poll timeout (default: 10)" >&2\n'
+            '            exit 0\n'
+            '            ;;\n'
+            '        *)\n'
+            '            echo "Error: unknown argument: $1" >&2\n'
+            '            exit 1\n'
+            '            ;;\n'
+            '    esac\n'
+            'done\n'
+            '\n'
+            f'SOCKET="{socket_path}"\n'
+            f'SCREENSHOT_FILE="{screenshot_path}"\n'
+            f'TAB_ID="{tab_id}"\n'
+            'INTERVAL=0.5\n'
+            'ATTEMPTS=$(awk "BEGIN {printf \\"%d\\", $TIMEOUT / $INTERVAL}")\n'
+            '\n'
+            'if [ ! -S "$SOCKET" ]; then\n'
+            '    echo "Error: IPC socket not found (is qutebrowser running?)" >&2\n'
+            '    exit 1\n'
+            'fi\n'
+            '\n'
+            'rm -f "$SCREENSHOT_FILE"\n'
+            '\n'
+            '# Build IPC command\n'
+            'if [ "$WINDOW" = "1" ]; then\n'
+            '    CMD=":tab-screenshot $TAB_ID --window"\n'
+            'else\n'
+            '    CMD=":tab-screenshot $TAB_ID"\n'
+            'fi\n'
+            '\n'
+            'PAYLOAD=$(printf \'{"args":["%s"],"target_arg":"tab-silent","protocol_version":1}\' "$CMD")\n'
+            'printf \'%s\\n\' "$PAYLOAD" | socat - UNIX-CONNECT:"$SOCKET"\n'
+            '\n'
+            'i=0\n'
+            'while [ $i -lt $ATTEMPTS ]; do\n'
+            '    sleep $INTERVAL\n'
+            '    if [ -f "$SCREENSHOT_FILE" ]; then\n'
+            '        BYTES=$(wc -c < "$SCREENSHOT_FILE")\n'
+            '        KB=$(awk "BEGIN {printf \\"%.1f\\", $BYTES / 1024}")\n'
+            '        RES=$(file "$SCREENSHOT_FILE" | grep -oP \'\\d+ x \\d+\' || echo "unknown")\n'
+            '        printf "\\e[96m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\e[0m\\n"\n'
+            '        printf "\\e[32m  Screenshot saved to screenshot.png\\e[0m\\n"\n'
+            '        printf "\\e[36m  ${KB}KB \\e[96m│\\e[36m ${RES}\\e[0m\\n"\n'
+            '        printf "\\e[96m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\e[0m\\n"\n'
+            '        exit 0\n'
+            '    fi\n'
+            '    i=$((i + 1))\n'
+            'done\n'
+            '\n'
+            'echo "Error: screenshot timed out (${TIMEOUT}s). Use --timeout <seconds> to increase." >&2\n'
             'exit 1\n'
         )
         script_path.chmod(

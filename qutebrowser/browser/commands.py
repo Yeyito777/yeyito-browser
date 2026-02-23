@@ -2098,6 +2098,32 @@ class CommandDispatcher:
             "No tab with ID {} found".format(tab_id))
 
     @cmdutils.register(instance='command-dispatcher', scope='window')
+    def tab_screenshot(self, tab_id: int, *, window: bool = False):
+        """Capture a screenshot of a tab at full screen resolution.
+
+        Args:
+            tab_id: The tab ID to screenshot.
+            window: If given, grab the whole window instead.
+        """
+        tab_id_str = str(tab_id)
+
+        if self._tabbed_browser.tab_runtime.screenshot_tab(
+                tab_id_str, window_mode=window):
+            return
+
+        for win_id in objreg.window_registry:
+            if win_id == self._win_id:
+                continue
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            if tabbed_browser.tab_runtime.screenshot_tab(
+                    tab_id_str, window_mode=window):
+                return
+
+        raise cmdutils.CommandError(
+            "No tab with ID {} found".format(tab_id))
+
+    @cmdutils.register(instance='command-dispatcher', scope='window')
     def grant_user_activation(self, tab_id: int):
         """Grant user activation to a tab's main frame.
 
