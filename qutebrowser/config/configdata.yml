@@ -2748,10 +2748,16 @@ window.title_format:
       - current_url
       - protocol
       - audio
-  default: '{perc}{current_title}{title_sep}qutebrowser'
+      - profile
+  default: '{perc}{current_title}{title_sep}qutebrowser{profile}'
   desc: |
     Format to use for the window title. The same placeholders like for
     `tabs.title.format` are defined.
+
+    The following additional placeholder is available:
+
+    * `{profile}` - The profile name derived from --basedir
+      (e.g. " [yeyito]"), or empty string if none.
 
 window.transparent:
   type: Bool

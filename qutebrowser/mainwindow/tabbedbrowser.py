@@ -318,6 +318,8 @@ class TabbedBrowser(QWidget):
             return
         fields = self.widget.get_tab_fields(idx)
         fields['id'] = self._win_id
+        profile = getattr(objects.args, 'profile', '')
+        fields['profile'] = f' [{profile}]' if profile else ''
 
         title = title_format.format(**fields)
         # prevent hanging WMs and similar issues with giant URLs

@@ -19,6 +19,7 @@ qutebrowser's initialization process roughly looks like this:
   See the docstring of app.py for details.
 """
 
+import os
 import sys
 import json
 
@@ -222,6 +223,36 @@ def _validate_untrusted_args(argv):
             sys.exit("Found {} after --untrusted-args, aborting.".format(arg))
 
 
+def _set_process_name(args):
+    """Set the process name so it shows up in pgrep/ps as 'qutebrowser'.
+
+    Derives a profile name from --basedir (e.g. 'yeyito' from
+    '~/.runtime/qutebrowser-yeyito/') and stores it on args.profile for use
+    in window titles.  On Linux, also sets /proc/PID/comm via prctl.
+    """
+    # Derive profile name from basedir
+    profile = ''
+    if getattr(args, 'basedir', None):
+        # Strip trailing slashes, take basename, remove 'qutebrowser-' prefix
+        dirname = os.path.basename(os.path.normpath(args.basedir))
+        if dirname.startswith('qutebrowser-'):
+            profile = dirname[len('qutebrowser-'):]
+    args.profile = profile
+
+    # Set the Linux process comm name (visible in pgrep, ps, top, etc.)
+    if sys.platform == 'linux':
+        try:
+            import ctypes
+            import ctypes.util
+            libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
+            PR_SET_NAME = 15
+            name = 'qutebrowser' if not profile else f'qb:{profile}'
+            # comm is limited to 15 chars + null terminator
+            libc.prctl(PR_SET_NAME, name[:15].encode())
+        except Exception:
+            pass  # Not critical — best-effort
+
+
 def main():
     earlyinit.startup_checkpoint("main() — entry point")
     _validate_untrusted_args(sys.argv)
@@ -232,6 +263,7 @@ def main():
         args = _unpack_json_args(args)
     if not args.basedir and not args.temp_basedir and not args.no_basedir:
         parser.error("--basedir is required. Use --no-basedir to override.")
+    _set_process_name(args)
     earlyinit.early_init(args)
     # We do this imports late as earlyinit needs to be run first (because of
     # version checking and other early initialization)
