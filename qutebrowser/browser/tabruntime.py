@@ -36,6 +36,8 @@ class TabRuntimeManager(QObject):
         shutil.rmtree(self._tabs_dir, ignore_errors=True)
         self._tabs_dir.mkdir(parents=True, exist_ok=True)
 
+        self._write_open_tab_script()
+
         tabbed_browser.new_tab.connect(self._on_new_tab)
         tabbed_browser.shutting_down.connect(self._on_shutdown)
         tabbed_browser.widget.tab_bar().tabMoved.connect(self._update_indices)
@@ -61,6 +63,8 @@ class TabRuntimeManager(QObject):
         self._write_network_script(tab_id)
         self._write_command_script(tab_id)
         self._write_screenshot_script(tab_id)
+        self._write_click_script(tab_id)
+        self._write_wait_script(tab_id)
 
         # Per-tab signal connections
         tab.url_changed.connect(
@@ -1164,6 +1168,265 @@ class TabRuntimeManager(QObject):
             'echo "Error: screenshot timed out (${TIMEOUT}s). Use --timeout <seconds> to increase." >&2\n'
             'exit 1\n'
         )
+        script_path.chmod(
+            script_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    def _write_click_script(self, tab_id):
+        """Write an executable shell script that clicks elements by CSS selector or coords."""
+        console_path = self._tabs_dir / tab_id / 'console.sh'
+        script_path = self._tabs_dir / tab_id / 'click.sh'
+
+        SQ = "'"  # shell single-quote — avoids escaping nightmares in Python strings
+
+        script = f"""#!/bin/sh
+
+# click.sh — Click an element by CSS selector or coordinates
+#
+# Usage:
+#   ./click.sh <css-selector>              Click first match
+#   ./click.sh --all <css-selector>         Click all matches
+#   ./click.sh --coords <x> <y>             Click at coordinates
+#   ./click.sh --timeout <s> <css-selector>  Custom timeout
+
+TIMEOUT=5
+SELECTOR=""
+COORDS_X=""
+COORDS_Y=""
+ALL=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --timeout) TIMEOUT="$2"; shift 2 ;;
+        --timeout=*) TIMEOUT="${{1#--timeout=}}"; shift ;;
+        --coords) COORDS_X="$2"; COORDS_Y="$3"; shift 3 ;;
+        --all) ALL=1; shift ;;
+        -h|--help)
+            echo "Usage: click.sh [options] <css-selector>" >&2
+            echo "" >&2
+            echo "Options:" >&2
+            echo "  --coords <x> <y>   Click at page coordinates" >&2
+            echo "  --all               Click all matching elements" >&2
+            echo "  --timeout <s>       Timeout (default: 5)" >&2
+            exit 0
+            ;;
+        *) SELECTOR="$1"; shift ;;
+    esac
+done
+
+CONSOLE="{console_path}"
+
+if [ -n "$COORDS_X" ] && [ -n "$COORDS_Y" ]; then
+    JS="(function(){{var el=document.elementFromPoint($COORDS_X,$COORDS_Y);if(!el)return {SQ}Error: no element at ({SQ}+$COORDS_X+{SQ},{SQ}+$COORDS_Y+{SQ}){SQ};el.click();return {SQ}Clicked: {SQ}+el.tagName+(el.id?{SQ}#{SQ}+el.id:{SQ}{SQ});}})()"
+    exec "$CONSOLE" --timeout "$TIMEOUT" "$JS"
+fi
+
+if [ -z "$SELECTOR" ]; then
+    echo "Usage: click.sh [--coords X Y | --all] <css-selector>" >&2
+    exit 1
+fi
+
+# Escape selector for JS string embedding
+SEL_ESC=$(printf {SQ}%s{SQ} "$SELECTOR" | sed "s/\\\\\\\\/\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\/g; s/{SQ}/\\\\\\\\{SQ}/g")
+
+if [ "$ALL" = "1" ]; then
+    JS="(function(){{var els=document.querySelectorAll({SQ}${{SEL_ESC}}{SQ});if(!els.length)return {SQ}Error: no elements match selector{SQ};var c=0;els.forEach(function(el){{el.scrollIntoView({{block:{SQ}center{SQ},behavior:{SQ}instant{SQ}}});el.click();c++;}});return {SQ}Clicked {SQ}+c+{SQ} element(s){SQ};}})()"
+else
+    JS="(function(){{var el=document.querySelector({SQ}${{SEL_ESC}}{SQ});if(!el)return {SQ}Error: no element matches selector{SQ};el.scrollIntoView({{block:{SQ}center{SQ},behavior:{SQ}instant{SQ}}});el.click();var desc=el.tagName;if(el.id)desc+={SQ}#{SQ}+el.id;var txt=(el.textContent||{SQ}{SQ}).trim().substring(0,50);if(txt)desc+={SQ} text={SQ}+txt;return {SQ}Clicked: {SQ}+desc;}})()"
+fi
+
+exec "$CONSOLE" --timeout "$TIMEOUT" "$JS"
+"""
+        script_path.write_text(script)
+        script_path.chmod(
+            script_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    def _write_wait_script(self, tab_id):
+        """Write an executable shell script that waits for page load or a selector."""
+        tab_data_path = self._tabs_dir / tab_id / 'tab-data.info'
+        console_path = self._tabs_dir / tab_id / 'console.sh'
+        script_path = self._tabs_dir / tab_id / 'wait.sh'
+
+        SQ = "'"  # shell single-quote
+
+        script = f"""#!/bin/sh
+
+# wait.sh — Wait for page load or an element to appear
+#
+# Usage:
+#   ./wait.sh --load                       Wait for page to finish loading
+#   ./wait.sh --selector <css-selector>     Wait for element to appear in DOM
+#   ./wait.sh --timeout <s> --load          Custom timeout
+
+TIMEOUT=15
+MODE=""
+SELECTOR=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --timeout) TIMEOUT="$2"; shift 2 ;;
+        --timeout=*) TIMEOUT="${{1#--timeout=}}"; shift ;;
+        --load) MODE="load"; shift ;;
+        --selector) MODE="selector"; SELECTOR="$2"; shift 2 ;;
+        -h|--help)
+            echo "Usage: wait.sh [options]" >&2
+            echo "" >&2
+            echo "Modes:" >&2
+            echo "  --load                  Wait for page load to complete" >&2
+            echo "  --selector <selector>   Wait for CSS selector to exist in DOM" >&2
+            echo "" >&2
+            echo "Options:" >&2
+            echo "  --timeout <seconds>     Timeout (default: 15)" >&2
+            exit 0
+            ;;
+        *)
+            echo "Error: unknown argument: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$MODE" ]; then
+    echo "Usage: wait.sh --load | --selector <selector>" >&2
+    exit 1
+fi
+
+TAB_DATA="{tab_data_path}"
+CONSOLE="{console_path}"
+INTERVAL=0.3
+ATTEMPTS=$(awk "BEGIN {{printf \\"%d\\", $TIMEOUT / $INTERVAL}}")
+
+if [ "$MODE" = "load" ]; then
+    i=0
+    while [ $i -lt $ATTEMPTS ]; do
+        STATUS=$(grep "^load_status:" "$TAB_DATA" 2>/dev/null | cut -d" " -f2-)
+        case "$STATUS" in
+            success|success_https)
+                echo "loaded ($STATUS)"
+                exit 0
+                ;;
+            error)
+                echo "load error" >&2
+                exit 1
+                ;;
+        esac
+        sleep $INTERVAL
+        i=$((i + 1))
+    done
+    echo "Error: load timed out (${{TIMEOUT}}s)" >&2
+    exit 1
+fi
+
+if [ "$MODE" = "selector" ]; then
+    SEL_ESC=$(printf {SQ}%s{SQ} "$SELECTOR" | sed "s/\\\\\\\\/\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\/g; s/{SQ}/\\\\\\\\{SQ}/g")
+    i=0
+    while [ $i -lt $ATTEMPTS ]; do
+        RESULT=$($CONSOLE --timeout 3 "document.querySelector({SQ}${{SEL_ESC}}{SQ}) ? {SQ}found{SQ} : {SQ}not-found{SQ}" 2>/dev/null)
+        case "$RESULT" in
+            *found*)
+                if echo "$RESULT" | grep -qv "not-found"; then
+                    echo "found"
+                    exit 0
+                fi
+                ;;
+        esac
+        sleep $INTERVAL
+        i=$((i + 1))
+    done
+    echo "Error: selector timed out (${{TIMEOUT}}s)" >&2
+    exit 1
+fi
+"""
+        script_path.write_text(script)
+        script_path.chmod(
+            script_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    def _write_open_tab_script(self):
+        """Write an executable shell script at tabs/ level that opens a URL in a new tab."""
+        basedir = str(Path(standarddir.runtime()).parent)
+        runtime_dir = standarddir.runtime()
+        script_path = self._tabs_dir / 'open-tab.sh'
+        order_path = self._tabs_dir / 'order'
+
+        # Compute the IPC socket path
+        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
+        md5 = hashlib.md5(data_to_hash).hexdigest()
+        socket_path = Path(runtime_dir) / f'ipc-{md5}'
+
+        SQ = "'"  # shell single-quote
+
+        script = f"""#!/bin/sh
+
+# open-tab.sh — Open a URL in a new tab and return the new tab ID
+#
+# Usage:
+#   ./open-tab.sh <url>
+#   ./open-tab.sh --timeout <s> <url>
+#
+# Outputs the new tab ID on stdout. The tab directory will be at:
+#   <tabs-dir>/<tab-id>/
+
+TIMEOUT=10
+URL=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --timeout) TIMEOUT="$2"; shift 2 ;;
+        --timeout=*) TIMEOUT="${{1#--timeout=}}"; shift ;;
+        -h|--help)
+            echo "Usage: open-tab.sh [--timeout <s>] <url>" >&2
+            exit 0
+            ;;
+        *) URL="$1"; shift ;;
+    esac
+done
+
+if [ -z "$URL" ]; then
+    echo "Usage: open-tab.sh <url>" >&2
+    exit 1
+fi
+
+SOCKET="{socket_path}"
+ORDER_FILE="{order_path}"
+TABS_DIR="{self._tabs_dir}"
+INTERVAL=0.3
+ATTEMPTS=$(awk "BEGIN {{printf \\"%d\\", $TIMEOUT / $INTERVAL}}")
+
+if [ ! -S "$SOCKET" ]; then
+    echo "Error: IPC socket not found (is qutebrowser running?)" >&2
+    exit 1
+fi
+
+# Snapshot current tab IDs
+BEFORE=$(cat "$ORDER_FILE" 2>/dev/null || echo "")
+
+# Send open command
+CMD=":open -t $URL"
+PAYLOAD=$(printf {SQ}{{"args":["%s"],"target_arg":"tab-silent","protocol_version":1}}{SQ} "$CMD")
+printf {SQ}%s\\n{SQ} "$PAYLOAD" | socat - UNIX-CONNECT:"$SOCKET"
+
+# Poll for new tab ID
+i=0
+while [ $i -lt $ATTEMPTS ]; do
+    sleep $INTERVAL
+    AFTER=$(cat "$ORDER_FILE" 2>/dev/null || echo "")
+    # Find IDs in AFTER that are not in BEFORE
+    NEW_ID=$(echo "$AFTER" | while read -r tid; do
+        if [ -n "$tid" ] && ! echo "$BEFORE" | grep -qxF "$tid"; then
+            echo "$tid"
+            break
+        fi
+    done)
+    if [ -n "$NEW_ID" ]; then
+        echo "$NEW_ID"
+        exit 0
+    fi
+    i=$((i + 1))
+done
+
+echo "Error: timed out waiting for new tab (${{TIMEOUT}}s)" >&2
+exit 1
+"""
+        script_path.write_text(script)
         script_path.chmod(
             script_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
