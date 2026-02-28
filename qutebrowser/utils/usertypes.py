@@ -15,6 +15,7 @@ from collections.abc import Sequence
 
 from qutebrowser.qt.core import pyqtSignal, pyqtSlot, QObject, QTimer
 from qutebrowser.qt.core import QUrl
+from qutebrowser.qt import sip
 
 from qutebrowser.utils import log, qtutils, utils
 
@@ -411,6 +412,9 @@ class Question(QObject):
     @pyqtSlot()
     def done(self) -> None:
         """Must be called when the question was answered completely."""
+        if sip.isdeleted(self):
+            log.misc.debug("Question C++ object already deleted, skipping done()")
+            return
         self.answered.emit(self.answer)
         if self.mode == PromptMode.yesno:
             if self.answer:
@@ -422,6 +426,9 @@ class Question(QObject):
     @pyqtSlot()
     def cancel(self) -> None:
         """Cancel the question (resulting from user-input)."""
+        if sip.isdeleted(self):
+            log.misc.debug("Question C++ object already deleted, skipping cancel()")
+            return
         self.cancelled.emit()
         self.completed.emit()
 
@@ -430,6 +437,9 @@ class Question(QObject):
         """Abort the question."""
         if self.is_aborted:
             log.misc.debug("Question was already aborted")
+            return
+        if sip.isdeleted(self):
+            log.misc.debug("Question C++ object already deleted, skipping abort()")
             return
         self.is_aborted = True
         self.aborted.emit()
