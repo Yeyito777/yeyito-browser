@@ -21,6 +21,41 @@ for arg in "$@"; do
 done
 
 # ============================================================
+# Phase 0: Gracefully stop running qutebrowser instances
+# ============================================================
+# A forced kill (SIGKILL) can lose in-memory data like session cookies and
+# localStorage (LevelDB WAL not flushed).  We send :quit via each instance's
+# IPC socket and wait for clean shutdown so nothing is lost.
+qb_pids=$(pgrep -f 'python.*-m qutebrowser' 2>/dev/null | head -20) || true
+if [[ -n "${qb_pids}" ]]; then
+    echo "[+] Gracefully stopping running qutebrowser instances..."
+    for basedir in "${HOME}"/.runtime/qutebrowser-*/; do
+        [[ -d "${basedir}" ]] || continue
+        ipc_socket=$(ls -t "${basedir}runtime/ipc-"* 2>/dev/null | head -1)
+        [[ -S "${ipc_socket}" ]] || continue
+        profile=$(basename "${basedir}")
+        echo "    Sending :quit to ${profile}..."
+        # qutebrowser IPC protocol: newline-delimited JSON
+        printf '{"args": [":quit"], "target_arg": null, "version": "1.0.0", "protocol_version": 1, "cwd": "%s"}\n' "$(pwd)" \
+            | socat - UNIX-CONNECT:"${ipc_socket}" 2>/dev/null || true
+    done
+    # Wait for processes to exit (up to 10 seconds)
+    for i in $(seq 1 20); do
+        if ! pgrep -f 'python.*-m qutebrowser' &>/dev/null; then
+            break
+        fi
+        sleep 0.5
+    done
+    # Check if any survived
+    if pgrep -f 'python.*-m qutebrowser' &>/dev/null; then
+        echo "    WARNING: Some instances did not exit. Sending SIGTERM..."
+        pgrep -f 'python.*-m qutebrowser' 2>/dev/null | xargs -r kill 2>/dev/null || true
+        sleep 2
+    fi
+    echo "[+] All qutebrowser instances stopped"
+fi
+
+# ============================================================
 # Phase 1: Check submodules
 # ============================================================
 echo "[+] Checking submodules..."
