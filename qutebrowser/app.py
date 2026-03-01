@@ -24,6 +24,11 @@ blocks and spins the Qt mainloop.
 
 import os
 import sys
+import glob as globmod
+import socket as stdlib_socket
+import stat
+import atexit
+import shutil
 import functools
 import tempfile
 import pathlib
@@ -64,6 +69,55 @@ from qutebrowser.browser import commands
 # pylint: enable=unused-import
 
 
+def _basedir_in_use(basedir):
+    """Check if another qutebrowser instance is using this basedir.
+
+    Looks for a live IPC socket in the basedir's runtime/ directory.
+    Returns True if a connectable socket is found.
+    """
+    runtime_dir = os.path.join(basedir, 'runtime')
+    for sock_path in globmod.glob(os.path.join(runtime_dir, 'ipc-*')):
+        try:
+            st = os.stat(sock_path)
+            if not stat.S_ISSOCK(st.st_mode):
+                continue
+            sock = stdlib_socket.socket(stdlib_socket.AF_UNIX,
+                                        stdlib_socket.SOCK_STREAM)
+            sock.settimeout(0.1)
+            sock.connect(sock_path)
+            sock.close()
+            return True
+        except (ConnectionRefusedError, FileNotFoundError, OSError):
+            continue
+    return False
+
+
+def _clone_basedir(original):
+    """Create a temporary clone of a basedir (copies config only).
+
+    Data, cache, and runtime start fresh.  The clone is meant to be
+    ephemeral and deleted on exit.
+    """
+    pid = os.getpid()
+    parent = os.path.dirname(os.path.normpath(original))
+    basename = os.path.basename(os.path.normpath(original))
+    clone = os.path.join(parent, f'{basename}-{pid}')
+
+    # Copy config so the same settings / keybindings apply
+    orig_config = os.path.join(original, 'config')
+    clone_config = os.path.join(clone, 'config')
+    if os.path.isdir(orig_config):
+        shutil.copytree(orig_config, clone_config)
+    else:
+        os.makedirs(clone_config, exist_ok=True)
+
+    # Fresh empty directories for everything else
+    for subdir in ('data', 'runtime', 'cache'):
+        os.makedirs(os.path.join(clone, subdir), exist_ok=True)
+
+    return clone
+
+
 def run(args):
     """Initialize everything and run the application."""
     from qutebrowser.misc.earlyinit import startup_checkpoint
@@ -71,6 +125,23 @@ def run(args):
 
     if args.temp_basedir:
         args.basedir = tempfile.mkdtemp(prefix='qutebrowser-basedir-')
+    elif args.basedir and not args.command:
+        # Direct launch (no URLs/commands) — if the basedir is already in
+        # use by another instance, create a temporary clone so we don't
+        # fight over LevelDB locks, IPC sockets, etc.
+        if _basedir_in_use(args.basedir):
+            clone = _clone_basedir(args.basedir)
+            sys.stderr.write(
+                "\n"
+                "  Someone else is using this qutebrowser profile already!\n"
+                "  To avoid interference the basedir will instead be a "
+                "clone at:\n"
+                f"    {clone}\n"
+                "  It will be automatically deleted on exit!\n"
+                "\n"
+            )
+            args.basedir = clone
+            atexit.register(shutil.rmtree, clone, ignore_errors=True)
 
     log.init.debug("Main process PID: {}".format(os.getpid()))
 
@@ -121,10 +192,11 @@ def run(args):
     startup_checkpoint("init() — main initialization")
     init(args=args)
 
-    quitter.instance.shutting_down.connect(server.shutdown)
-    server.got_args.connect(
-        lambda args, target_arg, cwd:
-        process_pos_args(args, cwd=cwd, via_ipc=True, target_arg=target_arg))
+    if server:
+        quitter.instance.shutting_down.connect(server.shutdown)
+        server.got_args.connect(
+            lambda args, target_arg, cwd:
+            process_pos_args(args, cwd=cwd, via_ipc=True, target_arg=target_arg))
 
     startup_checkpoint("entering Qt main loop")
     ret = qt_mainloop()

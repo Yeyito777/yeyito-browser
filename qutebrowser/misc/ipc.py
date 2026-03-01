@@ -527,35 +527,53 @@ def display_error(exc, args):
 def send_or_listen(args):
     """Send the args to a running instance or start a new IPCServer.
 
+    Only tries to delegate to a running instance when there are URLs or
+    commands to deliver (e.g. from xdg-open).  Direct launches (no URLs)
+    always start a new process — if the IPC socket is already taken, we
+    simply run without an IPC server.
+
     Args:
         args: The argparse namespace.
 
     Return:
-        The IPCServer instance if no running instance was detected.
-        None if an instance was running and received our request.
+        The IPCServer instance if we started a new server.
+        None if the args were sent to a running instance (caller should exit).
+        False if we're running without an IPC server (caller should continue).
     """
     global server
     try:
         socketname = _get_socketname(args.basedir)
+
+        # Only delegate to a running instance when there are URLs/commands
+        # to deliver (e.g. from xdg-open).  Direct launches (no URLs)
+        # always start a new process.
+        if args.command:
+            try:
+                sent = send_to_running_instance(socketname, args.command,
+                                                args.target)
+                if sent:
+                    return None
+            except AddressInUseError:
+                # This could be a race condition...
+                log.init.debug("Got AddressInUseError, trying again.")
+                time.sleep(0.5)
+                sent = send_to_running_instance(socketname, args.command,
+                                                args.target)
+                if sent:
+                    return None
+                else:
+                    raise
+
+        log.init.debug("Starting IPC server...")
         try:
-            sent = send_to_running_instance(socketname, args.command,
-                                            args.target)
-            if sent:
-                return None
-            log.init.debug("Starting IPC server...")
             server = IPCServer(socketname)
             server.listen()
             return server
         except AddressInUseError:
-            # This could be a race condition...
-            log.init.debug("Got AddressInUseError, trying again.")
-            time.sleep(0.5)
-            sent = send_to_running_instance(socketname, args.command,
-                                            args.target)
-            if sent:
-                return None
-            else:
-                raise
+            log.init.info("IPC socket already in use, running without IPC")
+            server = None
+            return False
+
     except Error as e:
         display_error(e, args)
         raise

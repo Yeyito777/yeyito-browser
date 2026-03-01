@@ -175,8 +175,8 @@ class Quitter(QObject):
 
         # Make sure we're not accepting a connection from the new process
         # before we fully exited.
-        assert ipc.server is not None
-        ipc.server.shutdown()
+        if ipc.server is not None:
+            ipc.server.shutdown()
 
         if hasattr(sys, 'frozen'):
             # https://pyinstaller.org/en/stable/common-issues-and-pitfalls.html#independent-subprocess
