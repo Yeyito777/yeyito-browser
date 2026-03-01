@@ -69,6 +69,42 @@ from qutebrowser.browser import commands
 # pylint: enable=unused-import
 
 
+def _set_process_name(basedir):
+    """Set the OS process name so pgrep/ps can find qutebrowser instances.
+
+    Without this, the process shows as "python" because we're launched
+    via "python -m qutebrowser". Uses Linux prctl(PR_SET_NAME) to set
+    /proc/pid/comm.
+
+    If a basedir is provided, derives a profile-specific name from it:
+        ~/.runtime/qutebrowser-mnemo/  → qb-mnemo
+        ~/.runtime/qutebrowser-yeyito/ → qb-yeyito
+
+    Falls back to "qutebrowser" if no basedir or on non-Linux.
+    """
+    if basedir:
+        # Extract profile name: last path component, strip "qutebrowser-" prefix
+        profile = os.path.basename(basedir.rstrip('/'))
+        if profile.startswith('qutebrowser-'):
+            profile = profile[len('qutebrowser-'):]
+        name = f"qb:{profile}"
+    else:
+        name = "qutebrowser"
+
+    # prctl PR_SET_NAME: limit is 15 chars + null terminator
+    name = name[:15]
+
+    try:
+        import ctypes
+        import ctypes.util
+        libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
+        PR_SET_NAME = 15
+        libc.prctl(PR_SET_NAME, name.encode('utf-8'), 0, 0, 0)
+    except (OSError, AttributeError, TypeError):
+        # Non-Linux or ctypes unavailable — not critical
+        pass
+
+
 def _basedir_in_use(basedir):
     """Check if another qutebrowser instance is using this basedir.
 
@@ -176,6 +212,12 @@ def run(args):
             )
             args.basedir = clone
             atexit.register(shutil.rmtree, clone, ignore_errors=True)
+
+    # Set a recognizable process name so pgrep/ps can find us.
+    # Without this, the process shows as "python" since we run via
+    # "python -m qutebrowser". Derive name from basedir for profile
+    # distinction: ~/.runtime/qutebrowser-mnemo/ → "qb-mnemo".
+    _set_process_name(args.basedir)
 
     log.init.debug("Main process PID: {}".format(os.getpid()))
 
