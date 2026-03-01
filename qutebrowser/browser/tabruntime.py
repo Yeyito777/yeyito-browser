@@ -4,8 +4,6 @@
 
 """Tab runtime directory manager — exposes live tab state as plain-text files."""
 
-import getpass
-import hashlib
 import json
 import shutil
 import stat
@@ -240,15 +238,9 @@ class TabRuntimeManager(QObject):
 
     def _write_console_script(self, tab_id):
         """Write an executable shell script that evals JS in a tab."""
-        basedir = str(Path(standarddir.runtime()).parent)
         runtime_dir = standarddir.runtime()
         result_path = self._tabs_dir / tab_id / 'console-result'
         script_path = self._tabs_dir / tab_id / 'console.sh'
-
-        # Compute the IPC socket path (mirrors ipc._get_socketname)
-        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
-        md5 = hashlib.md5(data_to_hash).hexdigest()
-        socket_path = Path(runtime_dir) / f'ipc-{md5}'
 
         script_path.write_text(
             '#!/bin/sh\n'
@@ -278,7 +270,7 @@ class TabRuntimeManager(QObject):
             '    exit 1\n'
             'fi\n'
             '\n'
-            f'SOCKET="{socket_path}"\n'
+            f'SOCKET="$(ls {runtime_dir}/ipc-* 2>/dev/null | head -1)"\n'
             f'RESULT_FILE="{result_path}"\n'
             f'TAB_ID="{tab_id}"\n'
             'MAX_CHARS=3000\n'
@@ -322,15 +314,9 @@ class TabRuntimeManager(QObject):
 
     def _write_snapshot_script(self, tab_id):
         """Write an executable shell script that triggers a DOM snapshot."""
-        basedir = str(Path(standarddir.runtime()).parent)
         runtime_dir = standarddir.runtime()
         dom_path = self._tabs_dir / tab_id / 'dom.html'
         script_path = self._tabs_dir / tab_id / 'snapshot-dom.sh'
-
-        # Compute the IPC socket path (mirrors ipc._get_socketname)
-        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
-        md5 = hashlib.md5(data_to_hash).hexdigest()
-        socket_path = Path(runtime_dir) / f'ipc-{md5}'
 
         # Build the JSON payload (mirrors ipc.send_to_running_instance)
         payload = json.dumps({
@@ -341,7 +327,7 @@ class TabRuntimeManager(QObject):
 
         script_path.write_text(
             '#!/bin/sh\n'
-            f'SOCKET="{socket_path}"\n'
+            f'SOCKET="$(ls {runtime_dir}/ipc-* 2>/dev/null | head -1)"\n'
             f'DOM_FILE="{dom_path}"\n'
             '\n'
             'if [ ! -S "$SOCKET" ]; then\n'
@@ -640,16 +626,10 @@ class TabRuntimeManager(QObject):
 
     def _write_network_script(self, tab_id):
         """Write an executable shell script that queries network data."""
-        basedir = str(Path(standarddir.runtime()).parent)
         runtime_dir = standarddir.runtime()
         result_path = self._tabs_dir / tab_id / 'network.json'
         body_path = self._tabs_dir / tab_id / 'network-body'
         script_path = self._tabs_dir / tab_id / 'network.sh'
-
-        # Compute the IPC socket path (mirrors ipc._get_socketname)
-        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
-        md5 = hashlib.md5(data_to_hash).hexdigest()
-        socket_path = Path(runtime_dir) / f'ipc-{md5}'
 
         script_path.write_text(
             '#!/bin/sh\n'
@@ -738,7 +718,7 @@ class TabRuntimeManager(QObject):
             '        ;;\n'
             'esac\n'
             '\n'
-            f'SOCKET="{socket_path}"\n'
+            f'SOCKET="$(ls {runtime_dir}/ipc-* 2>/dev/null | head -1)"\n'
             f'RESULT_FILE="{result_path}"\n'
             f'BODY_FILE="{body_path}"\n'
             f'TAB_ID="{tab_id}"\n'
@@ -959,15 +939,9 @@ class TabRuntimeManager(QObject):
 
     def _write_command_script(self, tab_id):
         """Write an executable shell script that runs qutebrowser commands."""
-        basedir = str(Path(standarddir.runtime()).parent)
         runtime_dir = standarddir.runtime()
         result_path = self._tabs_dir / tab_id / 'command-result'
         script_path = self._tabs_dir / tab_id / 'command.sh'
-
-        # Compute the IPC socket path (mirrors ipc._get_socketname)
-        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
-        md5 = hashlib.md5(data_to_hash).hexdigest()
-        socket_path = Path(runtime_dir) / f'ipc-{md5}'
 
         script_path.write_text(
             '#!/bin/sh\n'
@@ -1032,7 +1006,7 @@ class TabRuntimeManager(QObject):
             '    *)  CMD_ARGS=":$CMD_ARGS" ;;\n'
             'esac\n'
             '\n'
-            f'SOCKET="{socket_path}"\n'
+            f'SOCKET="$(ls {runtime_dir}/ipc-* 2>/dev/null | head -1)"\n'
             f'RESULT_FILE="{result_path}"\n'
             f'TAB_ID="{tab_id}"\n'
             'INTERVAL=0.5\n'
@@ -1081,15 +1055,9 @@ class TabRuntimeManager(QObject):
 
     def _write_screenshot_script(self, tab_id):
         """Write an executable shell script that captures a tab screenshot."""
-        basedir = str(Path(standarddir.runtime()).parent)
         runtime_dir = standarddir.runtime()
         screenshot_path = self._tabs_dir / tab_id / 'screenshot.png'
         script_path = self._tabs_dir / tab_id / 'screenshot.sh'
-
-        # Compute the IPC socket path (mirrors ipc._get_socketname)
-        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
-        md5 = hashlib.md5(data_to_hash).hexdigest()
-        socket_path = Path(runtime_dir) / f'ipc-{md5}'
 
         script_path.write_text(
             '#!/bin/sh\n'
@@ -1126,7 +1094,7 @@ class TabRuntimeManager(QObject):
             '    esac\n'
             'done\n'
             '\n'
-            f'SOCKET="{socket_path}"\n'
+            f'SOCKET="$(ls {runtime_dir}/ipc-* 2>/dev/null | head -1)"\n'
             f'SCREENSHOT_FILE="{screenshot_path}"\n'
             f'TAB_ID="{tab_id}"\n'
             'INTERVAL=0.5\n'
@@ -1387,15 +1355,9 @@ fi
 
     def _write_open_tab_script(self):
         """Write an executable shell script at tabs/ level that opens a URL in a new tab."""
-        basedir = str(Path(standarddir.runtime()).parent)
         runtime_dir = standarddir.runtime()
         script_path = self._tabs_dir / 'open-tab.sh'
         order_path = self._tabs_dir / 'order'
-
-        # Compute the IPC socket path
-        data_to_hash = f'{getpass.getuser()}-{basedir}'.encode('utf-8')
-        md5 = hashlib.md5(data_to_hash).hexdigest()
-        socket_path = Path(runtime_dir) / f'ipc-{md5}'
 
         SQ = "'"  # shell single-quote
 
@@ -1430,7 +1392,7 @@ if [ -z "$URL" ]; then
     exit 1
 fi
 
-SOCKET="{socket_path}"
+SOCKET="$(ls {runtime_dir}/ipc-* 2>/dev/null | head -1)"
 ORDER_FILE="{order_path}"
 TABS_DIR="{self._tabs_dir}"
 INTERVAL=0.3
