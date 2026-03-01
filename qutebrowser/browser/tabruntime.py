@@ -1174,6 +1174,7 @@ class TabRuntimeManager(QObject):
     def _write_click_script(self, tab_id):
         """Write an executable shell script that clicks elements by CSS selector or coords."""
         console_path = self._tabs_dir / tab_id / 'console.sh'
+        command_path = self._tabs_dir / tab_id / 'command.sh'
         script_path = self._tabs_dir / tab_id / 'click.sh'
 
         SQ = "'"  # shell single-quote — avoids escaping nightmares in Python strings
@@ -1182,10 +1183,15 @@ class TabRuntimeManager(QObject):
 
 # click.sh — Click an element by CSS selector or coordinates
 #
+# Uses qutebrowser :fake-click to send real QMouseEvents through
+# the browser engine, triggering framework event handlers (React, etc.)
+# that ignore synthetic DOM .click() calls.
+#
 # Usage:
 #   ./click.sh <css-selector>              Click first match
 #   ./click.sh --all <css-selector>         Click all matches
-#   ./click.sh --coords <x> <y>             Click at coordinates
+#   ./click.sh --coords <x> <y>             Click at viewport coordinates
+#   ./click.sh --js <css-selector>           Click via JS .click() (old behavior)
 #   ./click.sh --timeout <s> <css-selector>  Custom timeout
 
 TIMEOUT=5
@@ -1193,6 +1199,7 @@ SELECTOR=""
 COORDS_X=""
 COORDS_Y=""
 ALL=0
+JS_MODE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -1200,12 +1207,14 @@ while [ $# -gt 0 ]; do
         --timeout=*) TIMEOUT="${{1#--timeout=}}"; shift ;;
         --coords) COORDS_X="$2"; COORDS_Y="$3"; shift 3 ;;
         --all) ALL=1; shift ;;
+        --js) JS_MODE=1; shift ;;
         -h|--help)
             echo "Usage: click.sh [options] <css-selector>" >&2
             echo "" >&2
             echo "Options:" >&2
-            echo "  --coords <x> <y>   Click at page coordinates" >&2
+            echo "  --coords <x> <y>   Click at viewport coordinates (real event)" >&2
             echo "  --all               Click all matching elements" >&2
+            echo "  --js                Use JS .click() instead of real events" >&2
             echo "  --timeout <s>       Timeout (default: 5)" >&2
             exit 0
             ;;
@@ -1214,10 +1223,20 @@ while [ $# -gt 0 ]; do
 done
 
 CONSOLE="{console_path}"
+COMMAND="{command_path}"
 
+# --- coords mode: send real click at viewport (x, y) ---
 if [ -n "$COORDS_X" ] && [ -n "$COORDS_Y" ]; then
-    JS="(function(){{var el=document.elementFromPoint($COORDS_X,$COORDS_Y);if(!el)return {SQ}Error: no element at ({SQ}+$COORDS_X+{SQ},{SQ}+$COORDS_Y+{SQ}){SQ};el.click();return {SQ}Clicked: {SQ}+el.tagName+(el.id?{SQ}#{SQ}+el.id:{SQ}{SQ});}})()"
-    exec "$CONSOLE" --timeout "$TIMEOUT" "$JS"
+    # Identify element for reporting, then send real click
+    JS="(function(){{var el=document.elementFromPoint($COORDS_X,$COORDS_Y);if(!el)return {SQ}Error: no element at ({SQ}+$COORDS_X+{SQ},{SQ}+$COORDS_Y+{SQ}){SQ};return {SQ}Clicked: {SQ}+el.tagName+(el.id?{SQ}#{SQ}+el.id:{SQ}{SQ})+(el.getAttribute({SQ}class{SQ})?{SQ}.{SQ}+el.getAttribute({SQ}class{SQ}).split({SQ} {SQ})[0]:{SQ}{SQ});}})()"
+    RESULT=$("$CONSOLE" --timeout "$TIMEOUT" "$JS" 2>&1)
+    if echo "$RESULT" | grep -q "^=> Error:"; then
+        echo "$RESULT"
+        exit 1
+    fi
+    "$COMMAND" --timeout "$TIMEOUT" fake-click "$COORDS_X" "$COORDS_Y" >/dev/null 2>&1
+    echo "$RESULT"
+    exit 0
 fi
 
 if [ -z "$SELECTOR" ]; then
@@ -1229,12 +1248,38 @@ fi
 SEL_ESC=$(printf {SQ}%s{SQ} "$SELECTOR" | sed "s/\\\\\\\\/\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\/g; s/{SQ}/\\\\\\\\{SQ}/g")
 
 if [ "$ALL" = "1" ]; then
+    # --all always uses JS .click() (can't send multiple real clicks reliably)
     JS="(function(){{var els=document.querySelectorAll({SQ}${{SEL_ESC}}{SQ});if(!els.length)return {SQ}Error: no elements match selector{SQ};var c=0;els.forEach(function(el){{el.scrollIntoView({{block:{SQ}center{SQ},behavior:{SQ}instant{SQ}}});el.click();c++;}});return {SQ}Clicked {SQ}+c+{SQ} element(s){SQ};}})()"
-else
-    JS="(function(){{var el=document.querySelector({SQ}${{SEL_ESC}}{SQ});if(!el)return {SQ}Error: no element matches selector{SQ};el.scrollIntoView({{block:{SQ}center{SQ},behavior:{SQ}instant{SQ}}});el.click();var desc=el.tagName;if(el.id)desc+={SQ}#{SQ}+el.id;var txt=(el.textContent||{SQ}{SQ}).trim().substring(0,50);if(txt)desc+={SQ} text={SQ}+txt;return {SQ}Clicked: {SQ}+desc;}})()"
+    exec "$CONSOLE" --timeout "$TIMEOUT" "$JS"
 fi
 
-exec "$CONSOLE" --timeout "$TIMEOUT" "$JS"
+# --- single selector mode ---
+if [ "$JS_MODE" = "1" ]; then
+    # Legacy JS .click() path
+    JS="(function(){{var el=document.querySelector({SQ}${{SEL_ESC}}{SQ});if(!el)return {SQ}Error: no element matches selector{SQ};el.scrollIntoView({{block:{SQ}center{SQ},behavior:{SQ}instant{SQ}}});el.click();var desc=el.tagName;if(el.id)desc+={SQ}#{SQ}+el.id;var txt=(el.textContent||{SQ}{SQ}).trim().substring(0,50);if(txt)desc+={SQ} text={SQ}+txt;return {SQ}Clicked: {SQ}+desc;}})()"
+    exec "$CONSOLE" --timeout "$TIMEOUT" "$JS"
+fi
+
+# Real click: resolve element to viewport coords, scroll into view, then :fake-click
+JS="(function(){{var el=document.querySelector({SQ}${{SEL_ESC}}{SQ});if(!el)return {SQ}Error: no element matches selector{SQ};el.scrollIntoView({{block:{SQ}center{SQ},behavior:{SQ}instant{SQ}}});var r=el.getBoundingClientRect();var cx=Math.round(r.left+r.width/2);var cy=Math.round(r.top+r.height/2);var desc=el.tagName;if(el.id)desc+={SQ}#{SQ}+el.id;var t=(el.textContent||{SQ}{SQ}).trim();if(t)desc+={SQ} «{SQ}+t.substring(0,30)+{SQ}»{SQ};return cx+{SQ},{SQ}+cy+{SQ}|{SQ}+desc;}})()"
+
+RESULT=$("$CONSOLE" --timeout "$TIMEOUT" "$JS" 2>&1)
+
+# Check for error
+if echo "$RESULT" | grep -q "^=> Error:"; then
+    echo "$RESULT"
+    exit 1
+fi
+
+# Parse "=> X,Y|description"
+PAYLOAD=$(echo "$RESULT" | sed {SQ}s/^=> //{SQ})
+COORD_PART=$(echo "$PAYLOAD" | cut -d{SQ}|{SQ} -f1)
+DESC_PART=$(echo "$PAYLOAD" | cut -d{SQ}|{SQ} -f2-)
+CX=$(echo "$COORD_PART" | cut -d{SQ},{SQ} -f1)
+CY=$(echo "$COORD_PART" | cut -d{SQ},{SQ} -f2)
+
+"$COMMAND" --timeout "$TIMEOUT" fake-click "$CX" "$CY" >/dev/null 2>&1
+echo "=> Clicked: $DESC_PART"
 """
         script_path.write_text(script)
         script_path.chmod(

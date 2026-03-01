@@ -13,7 +13,8 @@ from typing import cast, Union, Optional
 from collections.abc import Callable
 
 from qutebrowser.qt.widgets import QApplication, QTabBar
-from qutebrowser.qt.core import Qt, QUrl, QEvent, QUrlQuery
+from qutebrowser.qt.core import Qt, QUrl, QEvent, QUrlQuery, QPointF
+from qutebrowser.qt.gui import QMouseEvent
 
 from qutebrowser.commands import userscripts, runners
 from qutebrowser.api import cmdutils
@@ -1810,6 +1811,34 @@ class CommandDispatcher:
                 tab = self._current_widget()
                 tab.send_event(press_event)
                 tab.send_event(release_event)
+
+    @cmdutils.register(instance='command-dispatcher', scope='window')
+    def fake_click(self, x: int, y: int) -> None:
+        """Send a fake mouse click at viewport coordinates.
+
+        Injects real QMouseEvents (move, press, release) into the web
+        view, so the click propagates through the full browser event
+        pipeline and is indistinguishable from a real user click.
+
+        Args:
+            x: Horizontal viewport coordinate.
+            y: Vertical viewport coordinate.
+        """
+        pos = QPointF(x, y)
+        tab = self._current_widget()
+        events = [
+            QMouseEvent(QEvent.Type.MouseMove, pos,
+                        Qt.MouseButton.NoButton, Qt.MouseButton.NoButton,
+                        Qt.KeyboardModifier.NoModifier),
+            QMouseEvent(QEvent.Type.MouseButtonPress, pos,
+                        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+                        Qt.KeyboardModifier.NoModifier),
+            QMouseEvent(QEvent.Type.MouseButtonRelease, pos,
+                        Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+                        Qt.KeyboardModifier.NoModifier),
+        ]
+        for evt in events:
+            tab.send_event(evt)
 
     @cmdutils.register(instance='command-dispatcher', scope='window',
                        debug=True, backend=usertypes.Backend.QtWebKit)
