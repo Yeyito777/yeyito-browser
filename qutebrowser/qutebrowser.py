@@ -50,8 +50,12 @@ def get_argparser():
                                      description=qutebrowser.__description__)
     parser.add_argument('-B', '--basedir', help="Base directory for all "
                         "storage.")
+    # NOTE: --no-basedir is intentionally non-functional (dead code).
+    # It is accepted silently so it doesn't cause an "unrecognized argument"
+    # error, but it is hidden from --help and the basedir check ignores it.
+    # Do NOT re-enable without review.
     parser.add_argument('--no-basedir', action='store_true',
-                        help="Allow running without --basedir.")
+                        help=argparse.SUPPRESS)
     parser.add_argument('-C', '--config-py', help="Path to config.py.",
                         metavar='CONFIG')
     parser.add_argument('-V', '--version', help="Show version and quit.",
@@ -261,8 +265,11 @@ def main():
     args = parser.parse_args(argv)
     if args.json_args is not None:
         args = _unpack_json_args(args)
-    if not args.basedir and not args.temp_basedir and not args.no_basedir:
-        parser.error("--basedir is required. Use --no-basedir to override.")
+    if not args.basedir and not args.temp_basedir:
+        # NOTE: args.no_basedir is intentionally NOT checked here.
+        # --no-basedir is dead code — it is silently accepted but does
+        # nothing.  Don't add `and not args.no_basedir` back.
+        parser.error("--basedir is required.")
     _set_process_name(args)
     earlyinit.early_init(args)
     # We do this imports late as earlyinit needs to be run first (because of
