@@ -93,10 +93,13 @@ def _basedir_in_use(basedir):
 
 
 def _clone_basedir(original):
-    """Create a temporary clone of a basedir (copies config only).
+    """Create a temporary clone of a basedir.
 
-    Data, cache, and runtime start fresh.  The clone is meant to be
-    ephemeral and deleted on exit.
+    Copies config (settings, keybindings, greasemonkey) and webengine
+    login state (cookies, local storage, IndexedDB) so the clone is
+    logged into the same accounts as the original.  Cache, runtime,
+    and non-login data start fresh.  The clone is ephemeral and
+    deleted on exit.
     """
     pid = os.getpid()
     parent = os.path.dirname(os.path.normpath(original))
@@ -111,9 +114,40 @@ def _clone_basedir(original):
     else:
         os.makedirs(clone_config, exist_ok=True)
 
-    # Fresh empty directories for everything else
+    # Fresh empty directories
     for subdir in ('data', 'runtime', 'cache'):
         os.makedirs(os.path.join(clone, subdir), exist_ok=True)
+
+    # Copy webengine login state so the clone inherits active sessions.
+    # We cherry-pick only the files/dirs that hold auth state to avoid
+    # copying the full webengine dir (caches, GPU state, etc.).
+    orig_webengine = os.path.join(original, 'data', 'webengine')
+    clone_webengine = os.path.join(clone, 'data', 'webengine')
+    if os.path.isdir(orig_webengine):
+        os.makedirs(clone_webengine, exist_ok=True)
+        # Items that carry login / session state
+        _login_items = (
+            'Cookies',                   # session cookies, auth tokens
+            'Cookies-journal',           # SQLite journal for cookies
+            'Local Storage',             # localStorage (SPAs store tokens here)
+            'IndexedDB',                 # IndexedDB (Gmail, Discord, etc.)
+            'Network Persistent State',  # HSTS, server properties
+            'TransportSecurity',         # HSTS preload state
+            'Service Worker',            # some sites auth via service workers
+        )
+        for item in _login_items:
+            src = os.path.join(orig_webengine, item)
+            dst = os.path.join(clone_webengine, item)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst)
+            elif os.path.isfile(src):
+                shutil.copy2(src, dst)
+
+    # Copy greasemonkey scripts (in data dir, separate from config)
+    orig_gm = os.path.join(original, 'data', 'greasemonkey')
+    clone_gm = os.path.join(clone, 'data', 'greasemonkey')
+    if os.path.isdir(orig_gm):
+        shutil.copytree(orig_gm, clone_gm)
 
     return clone
 

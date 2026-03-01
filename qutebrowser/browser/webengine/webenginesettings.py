@@ -310,10 +310,45 @@ class ProfileSetter:
         """
         user_agent = websettings.user_agent()
         self._profile.setHttpUserAgent(user_agent)
+        self._sync_client_hints(user_agent)
 
         accept_language = config.val.content.headers.accept_language
         if accept_language is not None:
             self._profile.setHttpAcceptLanguage(accept_language)
+
+    def _sync_client_hints(self, user_agent: str):
+        """Sync Client Hints (sec-ch-ua-*) to match the user agent string.
+
+        Without this, overriding the User-Agent header still leaves
+        sec-ch-ua-platform etc. reporting the real OS, which sites like
+        x.com use to flag logins as suspicious.
+        """
+        import re
+        ch = self._profile.clientHints()
+
+        # Detect platform from UA string
+        if 'Macintosh' in user_agent or 'Mac OS X' in user_agent:
+            ch.setPlatform('macOS')
+            ch.setArch('arm')
+        elif 'Windows' in user_agent:
+            ch.setPlatform('Windows')
+            ch.setArch('x86')
+        else:
+            # Linux or other — leave defaults
+            return
+
+        # Extract Chrome version if present (e.g. "Chrome/134.0.6998.89")
+        m = re.search(r'Chrome/(\d+)(?:\.(\S+))?', user_agent)
+        if m:
+            major = m.group(1)
+            full = f"{major}.{m.group(2)}" if m.group(2) else f"{major}.0.0.0"
+            ch.setFullVersionList({
+                'Chromium': full,
+                'Google Chrome': full,
+                'Not:A-Brand': '24.0.0.0',
+            })
+
+        ch.setBitness('64')
 
     def set_http_cache_size(self):
         """Initialize the HTTP cache size for the given profile."""
