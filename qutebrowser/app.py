@@ -238,7 +238,12 @@ def run(args):
     startup_checkpoint("Application() done")
     objects.qapp = app
     app.setOrganizationName("qutebrowser")
-    app.setApplicationName("qutebrowser")
+    _app_name = "qutebrowser"
+    if args.basedir:
+        _profile = os.path.basename(args.basedir.rstrip('/'))
+        if _profile.startswith('qutebrowser-'):
+            _app_name = _profile  # e.g. "qutebrowser-mnemo"
+    app.setApplicationName(_app_name)
     # Default DesktopFileName is org.qutebrowser.qutebrowser, set in `get_argparser()`
     app.setDesktopFileName(args.desktop_file_name)
     app.setApplicationVersion(qutebrowser.__version__)
