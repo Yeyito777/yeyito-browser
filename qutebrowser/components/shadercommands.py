@@ -6,6 +6,7 @@
 
 from qutebrowser.api import cmdutils
 from qutebrowser.config import config
+from qutebrowser.utils import objreg
 
 
 # Tracks runtime state; initialized from config on first use
@@ -42,11 +43,23 @@ def _set_shader_enabled(enabled):
         print(f"[SHADER-DEBUG-0] Python: testAttribute after set = {val}", file=sys.stderr)
 
 
+def _update_splitter_handles(enabled):
+    """Update the inspector splitter handle color on all tabs."""
+    for win_id in objreg.window_registry:
+        tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                    window=win_id)
+        for tab in tabbed_browser.widgets():
+            splitter = tab.data.splitter
+            if splitter is not None:
+                splitter.update_shader_style(enabled)
+
+
 def _do_shader_off():
     """Internal: disable the shader."""
     global _shader_enabled
     _shader_enabled = False
     _set_shader_enabled(False)
+    _update_splitter_handles(False)
 
 
 def _do_shader_on():
@@ -54,6 +67,7 @@ def _do_shader_on():
     global _shader_enabled
     _shader_enabled = True
     _set_shader_enabled(True)
+    _update_splitter_handles(True)
 
 
 @cmdutils.register(name='shader-off')

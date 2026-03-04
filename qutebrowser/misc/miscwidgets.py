@@ -314,6 +314,18 @@ class InspectorSplitter(QSplitter):
         self._inspector_idx: Optional[int] = None
         self._position: Optional[inspector.Position] = None
         self._preferred_size: Optional[int] = None
+        self.update_shader_style(config.val.content.element_shader)
+
+    def update_shader_style(self, enabled: bool) -> None:
+        """Update the splitter handle color based on shader state."""
+        if enabled:
+            self.setStyleSheet(
+                "QSplitter::handle { background-color: #1d9bf0; }")
+            self.setHandleWidth(1)
+        else:
+            self.setStyleSheet("")
+            self.setHandleWidth(self.style().pixelMetric(
+                QStyle.PixelMetric.PM_SplitterWidth, None, self))
 
     def cycle_focus(self):
         """Cycle keyboard focus between the main/inspector widget."""
