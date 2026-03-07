@@ -21,12 +21,16 @@ for arg in "$@"; do
 done
 
 # ============================================================
-# Phase 1: Check submodules
+# Phase 1: Verify source directories
 # ============================================================
-echo "[+] Checking submodules..."
-if [[ ! -d "${repo_dir}/qtwebengine/src/3rdparty/chromium" ]] || [[ ! -d "${repo_dir}/pyqt6-webengine/sip" ]]; then
-    echo "[+] Initializing submodules (QtWebEngine download may take several hours)..."
-    git -C "${repo_dir}" submodule update --init --recursive
+echo "[+] Verifying source tree..."
+if [[ ! -d "${repo_dir}/qtwebengine/src/3rdparty/chromium" ]]; then
+    echo "ERROR: qtwebengine/src/3rdparty/chromium not found." >&2
+    exit 1
+fi
+if [[ ! -d "${repo_dir}/pyqt6-webengine/sip" ]]; then
+    echo "ERROR: pyqt6-webengine/sip not found." >&2
+    exit 1
 fi
 
 # ============================================================
@@ -34,7 +38,7 @@ fi
 # ============================================================
 mkdir -p "${build_dir}"
 
-current_commit=$(git -C "${repo_dir}/qtwebengine" rev-parse HEAD 2>/dev/null || echo "unknown")
+current_commit=$(git -C "${repo_dir}" log -1 --format=%H -- qtwebengine/ 2>/dev/null || echo "unknown")
 last_commit=$(cat "${last_commit_file}" 2>/dev/null || echo "none")
 
 if [[ "${current_commit}" == "${last_commit}" ]] && [[ "${dirty}" == false ]]; then
@@ -96,7 +100,7 @@ echo "[+] Installing qutebrowser from ${repo_dir}"
 # C++ API additions (e.g., ElementShaderEnabled enum). We build from source
 # against our custom Qt headers so the SIP bindings include our enum values.
 
-bindings_current_commit=$(git -C "${repo_dir}/pyqt6-webengine" rev-parse HEAD 2>/dev/null || echo "unknown")
+bindings_current_commit=$(git -C "${repo_dir}" log -1 --format=%H -- pyqt6-webengine/ 2>/dev/null || echo "unknown")
 bindings_last_commit=$(cat "${last_bindings_commit_file}" 2>/dev/null || echo "none")
 
 if [[ "${bindings_current_commit}" == "${bindings_last_commit}" ]] && [[ "${dirty}" == false ]]; then
