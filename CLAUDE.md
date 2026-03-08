@@ -1,7 +1,7 @@
 ## About this project
 You're in my fork of qutebrowser's source. This fork includes a custom build of QtWebEngine (Chromium/Blink) to enable deep browser engine modifications.
 
-**Important**: Do NOT run git commands (commit, push, checkout, etc.) unless explicitly instructed by the user. This includes the qtwebengine submodule. The user manages git operations manually to avoid confusion about which commit they're on.
+**Important**: Do NOT run git commands (commit, push, checkout, etc.) unless explicitly instructed by the user. The user manages git operations manually to avoid confusion about which commit they're on.
 
 **Important**: After editing Blink/QtWebEngine C++ files, always run `./install.sh --dirty` to build and install. Don't wait for the user to ask.
 
@@ -10,7 +10,6 @@ You're in my fork of qutebrowser's source. This fork includes a custom build of 
 | When user mentions... | Read this first |
 |-----------------------|-----------------|
 | **shader**, element shader, colors, CSS transforms | `reference/element-shader.md` |
-| **git** commands, commit, push, revert, submodule | `reference/submodules.md` |
 | **build**, install, compile | `reference/build.md` |
 | **bindings**, SIP, PyQt6-WebEngine, enum, WebAttribute | `reference/build.md` (Phase 4) |
 | **new setting**, WebAttribute, mojom, IPC, preferences | `reference/adding-a-web-setting.md` |
@@ -22,14 +21,13 @@ You're in my fork of qutebrowser's source. This fork includes a custom build of 
 
 ## Custom QtWebEngine Build
 
-This repo uses a **git submodule** (`qtwebengine/`) pointing to a custom fork of QtWebEngine. The custom build allows modifying Chromium's Blink engine directly.
+This is a **monorepo** — qtwebengine, qtwebengine-chromium, and pyqt6-webengine sources live directly in the tree as plain directories (no submodules).
 
 **If your task involves modifying QtWebEngine or Blink**, read these reference files:
 - `reference/element-shader.md` - Element shader implementation spec
 - `reference/build.md` - Build process, directory structure, verification
 - `reference/adding-a-web-setting.md` - Full pipeline for adding a new QWebEngineSettings attribute (10 touch points across 9 files)
 - `reference/dependencies.md` - System packages, what we build vs use from system
-- `reference/submodules.md` - Git submodule workflow
 
 ### Quick Reference
 
@@ -38,31 +36,16 @@ This repo uses a **git submodule** (`qtwebengine/`) pointing to a custom fork of
 | `./install.sh` | Build (skips if commit unchanged) |
 | `./install.sh --dirty` | Force rebuild with uncommitted changes |
 | `~/.local/bin/qutebrowser` | Launch with custom QtWebEngine |
-| `./scripts/ladder-commit "msg"` | Commit through all 3 submodule levels |
-| `./scripts/ladder-commit "msg" --push` | Commit and push through all 3 levels |
 
-### Workflow for Blink Changes (for the user, not the agent)
-
-```bash
-# 1. Edit Blink source
-vim qtwebengine/src/3rdparty/chromium/...
-
-# 2. Build and test
-./install.sh --dirty
-~/.local/bin/qutebrowser
-
-# 3. Commit up the ladder (all 3 submodule levels)
-./scripts/ladder-commit "Your commit message" --push
-```
-
-### Submodule Structure
+### Monorepo Structure
 
 ```
-Qutebrowser/                     ← main repo (Yeyito777/yeyito-browser)
-├── qtwebengine/                 ← submodule (Yeyito777/yeyitowebengine)
-│   └── src/3rdparty/            ← nested submodule (Yeyito777/qtwebengine-chromium)
+Qutebrowser/                     ← single repo (Yeyito777/yeyito-browser)
+├── qutebrowser/                 ← Python browser code
+├── qtwebengine/                 ← C++ engine (formerly Yeyito777/yeyitowebengine)
+│   └── src/3rdparty/            ← Chromium source (formerly Yeyito777/qtwebengine-chromium)
 │       └── chromium/...         ← Blink source lives here
-└── pyqt6-webengine/             ← submodule (Yeyito777/pyqt6-webengine)
+└── pyqt6-webengine/             ← SIP bindings (formerly Yeyito777/pyqt6-webengine)
     └── sip/QtWebEngineCore/     ← SIP bindings (includes custom enum values)
 ```
 

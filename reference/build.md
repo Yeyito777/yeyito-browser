@@ -4,44 +4,28 @@
 
 To implement the element shader (see `element-shader.md`), we need to modify Chromium's Blink engine. Since QtWebEngine bundles Chromium, we:
 
-1. **Fork QtWebEngine** to our own private repository
-2. **Make our Blink modifications** and commit them to our fork
-3. **Use a git submodule** pointing to our fork (not Qt's upstream)
-4. **Build** and use environment variables to load our modified libraries, process binary, and resources
+1. **Maintain a monorepo** with our custom QtWebEngine and Chromium sources inline
+2. **Make our Blink modifications** directly in the tree
+3. **Build** and use environment variables to load our modified libraries, process binary, and resources
 
 **Key principle**: Keep `./install.sh` as the single entry point. First build takes hours, but subsequent builds are fast (seconds to minutes) thanks to incremental compilation.
 
 ## Current Setup
 
-- **QtWebEngine fork**: https://github.com/Yeyito777/yeyitowebengine
-- **Chromium fork**: https://github.com/Yeyito777/qtwebengine-chromium
-- **PyQt6-WebEngine fork**: https://github.com/Yeyito777/pyqt6-webengine
-- **Branch**: `main` (all repos)
+- **Monorepo**: https://github.com/Yeyito777/yeyito-browser
 - **Base version**: Qt 6.10.0
 - **Verification**: Custom log message in `browser_main_loop.cc`
-
-## Architecture
-
-```
-Qt's upstream                   Your forks (GitHub)                 Your main repo
-─────────────                   ───────────────────                 ──────────────
-qt/qtwebengine                  Yeyito777/yeyitowebengine           Yeyito777/yeyito-browser
-qt/qtwebengine-chromium         Yeyito777/qtwebengine-chromium      ├── qtwebengine/ ──▶ yeyitowebengine
-PyQt6-WebEngine (PyPI)          Yeyito777/pyqt6-webengine           │   └── src/3rdparty/ ──▶ qtwebengine-chromium
-                                                                    └── pyqt6-webengine/ ──▶ pyqt6-webengine
-```
-
-When someone clones your repo with `--recurse-submodules`, they get all forks with all your changes.
+- QtWebEngine, Chromium, and PyQt6-WebEngine sources live directly in the tree (no submodules)
 
 ## Directory Structure
 
 ```
 Qutebrowser/
-├── qtwebengine/                          # Submodule → YOUR fork
+├── qtwebengine/                          # C++ engine source (inline)
 │   └── src/3rdparty/chromium/
 │       └── content/browser/
 │           └── browser_main_loop.cc      ← Current verification log
-├── pyqt6-webengine/                      # Submodule → YOUR fork (SIP bindings)
+├── pyqt6-webengine/                      # SIP bindings source (inline)
 │   └── sip/QtWebEngineCore/
 │       └── qwebenginesettings.sip        ← Has ElementShaderEnabled enum
 ├── build/                                 # Gitignored (~50-100GB)
@@ -83,7 +67,6 @@ On a 12-core system with 31GB RAM:
 | First build | ~2 hours | 22769 Chromium targets + Qt wrapper |
 | No changes | ~15 seconds | Ninja checks timestamps |
 | Single `.cc` file change | 1-5 minutes | Recompiles affected targets |
-| Chromium submodule download | ~1 hour | ~6GB compressed data |
 | PyQt6-WebEngine bindings (first) | ~30-60 seconds | SIP generates + compiles C++ wrappers |
 | PyQt6-WebEngine bindings (no changes) | instant | Commit tracking skips build |
 
@@ -99,8 +82,8 @@ QtWebEngine uses **CMake** + **Ninja**:
      │
      ▼
 ┌─────────────────────────────────────────────────────────┐
-│  Phase 1: Check submodules initialized                  │
-│  git submodule update --init --recursive                │
+│  Phase 1: Verify source directories exist               │
+│  (qtwebengine/src/3rdparty/chromium, pyqt6-webengine)   │
 └─────────────────────────────────────────────────────────┘
      │
      ▼
@@ -121,7 +104,7 @@ QtWebEngine uses **CMake** + **Ninja**:
 │  1. Patch .pri/.prl files to use custom install paths   │
 │     (no system qt6-webengine; qmake needs absolute paths)│
 │  2. QMAKEPATH → custom mkspecs for module discovery     │
-│  3. sip-install from pyqt6-webengine/ submodule         │
+│  3. sip-install from pyqt6-webengine/ source dir        │
 │  4. Installs .abi3.so into venv site-packages           │
 └─────────────────────────────────────────────────────────┘
      │
@@ -201,25 +184,12 @@ Qt's `.prl` files (e.g., `libQt6WebEngineWidgets.prl`) list transitive link depe
 
 Without the system package, qmake has no knowledge of WebEngine modules. The `.pri` patching tells qmake where our libraries and headers live. The `.prl` patching ensures transitive link dependencies resolve correctly (our WebEngine libs from our install, everything else from the system). Without these patches, the linker would fail looking for `/usr/lib/libQt6WebEngineCore.so` (which doesn't exist).
 
-## Fork + Submodule Setup
+## Monorepo History
 
-We use a **private fork** of QtWebEngine with a **git submodule** because:
-
-- **Your changes are tracked**: Committed to your fork, not just local dirty modifications
-- **Others get your changes**: Clone the repo → submodule fetches your fork → your code included
-- **Version controlled**: Full git history of your Blink patches
-- **Easy Qt updates**: Rebase your branch onto new upstream tags
-
-### Initial Setup (Historical Reference)
-
-The forks were set up by:
-1. Forking `qt/qtwebengine` → `Yeyito777/yeyitowebengine`
-2. Forking `qt/qtwebengine-chromium` → `Yeyito777/qtwebengine-chromium` (via `gh repo fork`)
-3. Updating `.gitmodules` in yeyitowebengine to point to the chromium fork
-4. Adding yeyitowebengine as a submodule in the main repo
-5. Importing PyQt6-WebEngine 6.10.0 source from PyPI → `Yeyito777/pyqt6-webengine`
-6. Adding `ElementShaderEnabled` to `qwebenginesettings.sip` in the fork
-7. Adding pyqt6-webengine as a submodule in the main repo
+This repo originally used three layers of git submodules (yeyitowebengine → qtwebengine-chromium, plus pyqt6-webengine). These were absorbed into the monorepo to eliminate the multi-level commit/push workflow. Pre-monorepo history is archived in:
+- `github.com/Yeyito777/yeyitowebengine`
+- `github.com/Yeyito777/qtwebengine-chromium`
+- `github.com/Yeyito777/pyqt6-webengine`
 
 ### Daily Workflow
 
@@ -231,57 +201,8 @@ vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolv
 ./install.sh --dirty
 ~/.local/bin/qutebrowser
 
-# 3. Happy with changes? Commit up the ladder (3 levels)
-cd qtwebengine/src/3rdparty
-git add . && git commit -m "Description" && git push origin main
-cd ..
-
-cd ../..  # now in qtwebengine/
-git add src/3rdparty && git commit -m "Update chromium" && git push origin main
-
-cd ..  # now in Qutebrowser/
-git add qtwebengine && git commit -m "Update qtwebengine" && git push
-```
-
-If no changes were made to QtWebEngine:
-```
-$ ./install.sh
-[+] Checking QtWebEngine submodule...
-[+] Building QtWebEngine...
-ninja: no work to do.
-[+] Installing to build/install...
-[+] Creating virtualenv...
-...
-```
-
-### Updating Qt Version
-
-When Qt releases a new version and you want to update:
-
-```bash
-cd qtwebengine
-
-# Add Qt's upstream as remote if not already
-git remote add upstream https://github.com/qt/qtwebengine.git
-
-# Fetch upstream changes
-git fetch upstream
-
-# Rebase your changes onto the new version
-git rebase upstream/v6.11.0
-
-# Resolve any conflicts, then:
-git submodule update --init --recursive
-git push origin main --force-with-lease
-
-cd ..
-
-# Update submodule reference
-git add qtwebengine
-git commit -m "Update QtWebEngine to v6.11.0"
-
-# Rebuild (will take a while due to version change)
-./install.sh
+# 3. Happy with changes? Single commit, single push
+git add -A && git commit -m "Description" && git push
 ```
 
 ## Verifying Custom Build
@@ -313,8 +234,7 @@ Once QtWebEngine is building, modify these files in your fork:
 
 ## Build Requirements
 
-- ~6GB disk for Chromium submodule (compressed git objects)
-- ~50-100GB for build artifacts
+- ~50-100GB disk for build artifacts
 - 16GB+ RAM recommended (32GB preferred for parallel builds)
 - Ninja build system
 - CMake 3.19+

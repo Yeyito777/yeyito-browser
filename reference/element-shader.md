@@ -465,7 +465,7 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 
 11. ~~**Drop shadow recoloring**~~ - DONE: Reads `BoxShadow()` from the style builder, recolors each shadow entry to `#090d35` while preserving original alpha and opacity. Shadow geometry (offsets, blur, spread, inset) is untouched.
 
-12. ~~**Build custom PyQt6-WebEngine bindings**~~ - DONE: PyQt6-WebEngine source is forked as a submodule (`pyqt6-webengine/`), with `ElementShaderEnabled` added to `qwebenginesettings.sip`. Phase 4 of `install.sh` builds and installs the custom bindings using `sip-install` against our custom Qt headers. The venv's PyQt6 module now loads our custom `.abi3.so` which correctly marshals the enum value to C++.
+12. ~~**Build custom PyQt6-WebEngine bindings**~~ - DONE: PyQt6-WebEngine source lives in `pyqt6-webengine/`, with `ElementShaderEnabled` added to `qwebenginesettings.sip`. Phase 4 of `install.sh` builds and installs the custom bindings using `sip-install` against our custom Qt headers. The venv's PyQt6 module now loads our custom `.abi3.so` which correctly marshals the enum value to C++.
 
 13. ~~**Compositor bg-color bypass**~~ - DONE: Composited `background-color` animations bypass the shader (compositor thread interpolates directly). Fixed by blocking compositor promotion for bg-color when shader is enabled (`compositor_animations.cc`).
 
@@ -516,7 +516,7 @@ if (!settings || !settings->GetElementShaderEnabled()) {
 
 **Python side** (`qutebrowser/components/shadercommands.py`): Toggles the setting on all profiles via `QWebEngineSettings.setAttribute()`. The settings pipeline automatically propagates to all existing tabs, new tabs, and page refreshes. The `:shader-*` commands override the config value at runtime; on restart, the config value takes effect again.
 
-**Status**: Fully operational. Custom PyQt6-WebEngine bindings (built from the `pyqt6-webengine/` submodule) include the `ElementShaderEnabled` enum value. Mojom IPC serialization carries the value from the browser process to the renderer process. `QWebEngineSettings.WebAttribute.ElementShaderEnabled` is accessible from Python and correctly marshals to C++ value 38, propagating through to Blink's `Settings::GetElementShaderEnabled()`.
+**Status**: Fully operational. Custom PyQt6-WebEngine bindings (built from `pyqt6-webengine/`) include the `ElementShaderEnabled` enum value. Mojom IPC serialization carries the value from the browser process to the renderer process. `QWebEngineSettings.WebAttribute.ElementShaderEnabled` is accessible from Python and correctly marshals to C++ value 38, propagating through to Blink's `Settings::GetElementShaderEnabled()`.
 
 ### Key files
 

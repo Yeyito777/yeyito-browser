@@ -145,7 +145,7 @@ The research that led to this fix also uncovered other mechanisms that can destr
 | **Cookies** | SQLite `meta` table version (currently 24) | Refuses to open |
 | **HTTP cache** | `kSimpleVersion` in fake index file (currently 9) | Entire cache dir cleared |
 
-The IndexedDB data format version is particularly relevant: it encodes `v8::CurrentValueSerializerFormatVersion()` (currently 15) and `blink::kSerializedScriptValueVersion` (currently 21). If you ever downgrade the Chromium submodule, IndexedDB databases written by the newer version will be permanently inaccessible. This is a forward-only migration — always move the submodule forward.
+The IndexedDB data format version is particularly relevant: it encodes `v8::CurrentValueSerializerFormatVersion()` (currently 15) and `blink::kSerializedScriptValueVersion` (currently 21). If you ever downgrade the Chromium source, IndexedDB databases written by the newer version will be permanently inaccessible. This is a forward-only migration — always move forward.
 
 ## Debugging
 

@@ -120,7 +120,7 @@ We maintain three forks that diverge from upstream. Periodically syncing keeps u
 3. Rebase or merge our changes onto the new upstream tag
 4. Rebuild: `./install.sh --dirty`
 5. Test the element shader still works
-6. Commit up the ladder: `./scripts/ladder-commit "Sync with upstream Qt 6.x.y" --push`
+6. Commit and push: `git add -A && git commit -m "Sync with upstream Qt 6.x.y" && git push`
 
 ### Files most likely to conflict on sync
 - `third_party/blink/renderer/core/css/resolver/style_resolver.cc` — our shader hook
