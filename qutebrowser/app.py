@@ -128,6 +128,49 @@ def _basedir_in_use(basedir):
     return False
 
 
+def _cleanup_stale_clones(basedir):
+    """Remove orphaned basedir clones whose owning process is no longer alive.
+
+    _clone_basedir() creates directories named <basedir>-<pid>.  It registers
+    an atexit handler to delete them, but that handler doesn't run on SIGKILL,
+    crashes, or other abnormal exits.  This function scans for those leftovers
+    at startup and removes them.
+    """
+    import re
+    parent = os.path.dirname(os.path.normpath(basedir))
+    basename = os.path.basename(os.path.normpath(basedir))
+    prefix = f'{basename}-'
+
+    try:
+        entries = os.listdir(parent)
+    except OSError:
+        return
+
+    for entry in entries:
+        if not entry.startswith(prefix):
+            continue
+        suffix = entry[len(prefix):]
+        # Must be a bare PID (all digits)
+        if not re.fullmatch(r'\d+', suffix):
+            continue
+        pid = int(suffix)
+        # Check if the process is still alive
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            # Process is gone — safe to remove
+            stale = os.path.join(parent, entry)
+            try:
+                shutil.rmtree(stale)
+                sys.stderr.write(f"  Cleaned up stale clone: {stale}\n")
+            except OSError as e:
+                sys.stderr.write(
+                    f"  Warning: failed to remove stale clone {stale}: {e}\n")
+        except PermissionError:
+            # Process exists but we can't signal it — leave it alone
+            pass
+
+
 def _clone_basedir(original):
     """Create a temporary clone of a basedir.
 
@@ -196,6 +239,10 @@ def run(args):
     if args.temp_basedir:
         args.basedir = tempfile.mkdtemp(prefix='qutebrowser-basedir-')
     elif args.basedir and not args.command:
+        # Clean up any stale clones from previous instances that didn't
+        # exit cleanly (e.g. SIGKILL, crash).  Must run before we
+        # potentially create a new clone.
+        _cleanup_stale_clones(args.basedir)
         # Direct launch (no URLs/commands) — if the basedir is already in
         # use by another instance, create a temporary clone so we don't
         # fight over LevelDB locks, IPC sockets, etc.
