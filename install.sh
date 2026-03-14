@@ -70,12 +70,18 @@ else
     ninja -C "${webengine_build}" -j$(nproc)
 
     echo "[+] Installing to ${install_dir}..."
-    # Unlink old shared libraries and renderer binary before installing so that
-    # a running qutebrowser keeps the old inodes alive via mmap. ninja install
-    # then creates fresh files with new inodes — no in-place overwrites.
-    find "${install_dir}/lib" -name "libQt6WebEngine*.so*" -type f -delete 2>/dev/null || true
-    rm -f "${install_dir}/lib/qt6/QtWebEngineProcess" 2>/dev/null || true
-    ninja -C "${webengine_build}" install
+    # Stage into a temporary directory, then swap atomically so that a running
+    # qutebrowser never sees a missing QtWebEngineProcess or half-copied .so.
+    # The old install tree is kept at install.old/ (mmap'd inodes survive even
+    # after unlink, but keeping the dir makes rollback trivial).
+    rm -rf "${install_dir}.new" "${install_dir}.old"
+    DESTDIR="${build_dir}/.staging" ninja -C "${webengine_build}" install
+    mv "${build_dir}/.staging/${install_dir}" "${install_dir}.new"
+    rm -rf "${build_dir}/.staging"
+    if [[ -d "${install_dir}" ]]; then
+        mv "${install_dir}" "${install_dir}.old"
+    fi
+    mv "${install_dir}.new" "${install_dir}"
 
     # Record the commit we just built
     echo "${current_commit}" > "${last_commit_file}"
