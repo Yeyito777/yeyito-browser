@@ -76,4 +76,30 @@ SPDX-License-Identifier: GPL-3.0-or-later
             return bytes
         }
     }
+
+    // Chromium 141
+    // https://caniuse.com/mdn-javascript_builtins_map_getorinsertcomputed
+    // TC39 "Map.prototype.upsert" proposal - used heavily by PDF.js 5.5+
+    if (typeof Map.prototype.getOrInsertComputed === "undefined") {
+        Map.prototype.getOrInsertComputed = function(key, callbackFn) {
+            if (this.has(key)) {
+                return this.get(key)
+            }
+            const value = callbackFn(key)
+            this.set(key, value)
+            return value
+        }
+    }
+
+    // Chromium 141
+    // https://caniuse.com/mdn-javascript_builtins_map_getorinsert
+    if (typeof Map.prototype.getOrInsert === "undefined") {
+        Map.prototype.getOrInsert = function(key, defaultValue) {
+            if (this.has(key)) {
+                return this.get(key)
+            }
+            this.set(key, defaultValue)
+            return defaultValue
+        }
+    }
 })();

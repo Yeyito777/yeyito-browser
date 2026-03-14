@@ -39,8 +39,12 @@ PDF.js calls toHex() / URL.parse() / etc. → finds the polyfill → works
 | `Uint8Array.fromHex()` | 140 | Our addition |
 | `Uint8Array.prototype.toBase64()` | 140 | Our addition |
 | `Uint8Array.fromBase64()` | 140 | Our addition |
+| `Map.prototype.getOrInsertComputed()` | 141 | Our addition |
+| `Map.prototype.getOrInsert()` | 141 | Our addition |
 
 The Uint8Array hex/base64 methods are from the [TC39 "Uint8Array to/from base64 and hex" proposal](https://github.com/tc39/proposal-arraybuffer-base64). PDF.js v5.4.624 started using `toHex()` for document fingerprinting, causing `hashOriginal.toHex is not a function` errors on Chromium <140.
+
+The Map upsert methods are from the [TC39 "Map.prototype.upsert" proposal](https://github.com/tc39/proposal-upsert). PDF.js v5.5.207 uses `getOrInsertComputed()` extensively for caching (method promises, intent states, font caches, etc.), causing `this[#methodPromises].getOrInsertComputed is not a function` errors on Chromium <141.
 
 ## Adding a New Polyfill
 
