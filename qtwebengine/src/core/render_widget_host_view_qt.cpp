@@ -736,7 +736,10 @@ void RenderWidgetHostViewQt::OnTextSelectionChanged(content::TextInputManager *t
     if (!focused_view)
       return;
 
-#if BUILDFLAG(IS_OZONE)
+    // Disabled: Do not sync text selection to PRIMARY clipboard.
+    // This prevents delete operations (e.g. Ctrl+Backspace) from polluting
+    // the clipboard via the transient selection that precedes deletion.
+#if 0 // was: BUILDFLAG(IS_OZONE)
     if (ui::Clipboard::IsSupportedClipboardBuffer(ui::ClipboardBuffer::kSelection)) {
         const content::TextInputManager::TextSelection *selection = GetTextInputManager()->GetTextSelection(focused_view);
         if (selection->selected_text().length() && selection->user_initiated()) {
@@ -745,7 +748,7 @@ void RenderWidgetHostViewQt::OnTextSelectionChanged(content::TextInputManager *t
             clipboard_writer.WriteText(selection->selected_text());
         }
     }
-#endif // BUILDFLAG(IS_OZONE)
+#endif
 
     m_imState |= ImStateFlags::TextSelectionUpdated;
     if (m_imState == ImStateFlags::AllFlags

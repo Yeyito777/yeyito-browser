@@ -9,6 +9,7 @@ from typing import Optional, Any
 from collections.abc import Iterable, MutableMapping, Callable
 
 from qutebrowser.qt.widgets import QApplication, QLineEdit
+from qutebrowser.qt.gui import QClipboard
 
 from qutebrowser.api import cmdutils
 
@@ -23,6 +24,12 @@ class _ReadlineBridge:
 
     def __init__(self) -> None:
         self._deleted: MutableMapping[QLineEdit, str] = {}
+
+    def _clear_primary_selection(self) -> None:
+        """Clear the X11 PRIMARY selection so kill operations don't pollute it."""
+        clipboard = QApplication.clipboard()
+        if clipboard and clipboard.supportsSelection():
+            clipboard.clear(QClipboard.Mode.Selection)
 
     def _widget(self) -> Optional[QLineEdit]:
         """Get the currently active QLineEdit."""
@@ -52,6 +59,7 @@ class _ReadlineBridge:
         if delete:
             self._deleted[widget] = widget.selectedText()
             widget.del_()
+            self._clear_primary_selection()
 
     def backward_char(self) -> None:
         self._dispatch('cursorBackward', mark=False)
@@ -150,6 +158,7 @@ class _ReadlineBridge:
         widget.cursorBackward(True, moveby)
         self._deleted[widget] = widget.selectedText()
         widget.del_()
+        self._clear_primary_selection()
 
     def backward_kill_word(self) -> None:
         self._dispatch('cursorWordBackward', mark=True, delete=True)

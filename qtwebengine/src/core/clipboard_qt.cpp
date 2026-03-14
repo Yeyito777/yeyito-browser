@@ -115,6 +115,9 @@ void ClipboardQt::WritePortableAndPlatformRepresentations(ui::ClipboardBuffer ty
                                                   type == ui::ClipboardBuffer::kCopyPaste ? QClipboard::Clipboard
                                                                                           : QClipboard::Selection);
 
+    // Disabled: Do not mirror CLIPBOARD writes to PRIMARY selection.
+    // This prevents clipboard operations from overwriting the PRIMARY buffer.
+#if 0
     if (type == ui::ClipboardBuffer::kCopyPaste && IsSupportedClipboardBuffer(ui::ClipboardBuffer::kSelection)) {
         auto text_iter = objects.find(base::VariantIndexOfType<Data, TextData>());
         if (text_iter != objects.end()) {
@@ -126,6 +129,7 @@ void ClipboardQt::WritePortableAndPlatformRepresentations(ui::ClipboardBuffer ty
                                                     nullptr, val);
         }
     }
+#endif
     m_dataSrc[type] = std::move(data_src);
 }
 
