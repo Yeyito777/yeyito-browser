@@ -1995,6 +1995,32 @@ class CommandDispatcher:
         raise cmdutils.CommandError(
             "No tab with ID {} found".format(tab_id))
 
+    @cmdutils.register(instance='command-dispatcher', scope='window',
+                       name='close-tab-id')
+    def close_tab_id(self, tab_id: int):
+        """Close a tab by its runtime tab ID.
+
+        Args:
+            tab_id: The tab ID to close.
+        """
+        tab_id_str = str(tab_id)
+
+        # Try current window first
+        if self._tabbed_browser.tab_runtime.close_tab(tab_id_str):
+            return
+
+        # Search other windows
+        for win_id in objreg.window_registry:
+            if win_id == self._win_id:
+                continue
+            tabbed_browser = objreg.get('tabbed-browser', scope='window',
+                                        window=win_id)
+            if tabbed_browser.tab_runtime.close_tab(tab_id_str):
+                return
+
+        raise cmdutils.CommandError(
+            "No tab with ID {} found".format(tab_id))
+
     @cmdutils.register(instance='command-dispatcher', scope='window')
     def network_list(self, tab_id: int):
         """List all captured network requests for a tab.

@@ -275,6 +275,21 @@ class TabRuntimeManager(QObject):
                 return t
         return None
 
+    def close_tab(self, tab_id_str):
+        """Close a tab by its runtime tab ID.
+
+        Returns True if the tab was found and closed, False otherwise.
+        """
+        if tab_id_str not in self._tab_data:
+            return False
+
+        tab = self._find_tab(tab_id_str)
+        if tab is None:
+            return False
+
+        self._tabbed_browser.close_tab(tab)
+        return True
+
     def screenshot_tab(self, tab_id_str, window_mode=False):
         """Capture a screenshot of any tab at full screen resolution.
 
