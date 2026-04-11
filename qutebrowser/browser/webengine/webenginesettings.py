@@ -40,6 +40,7 @@ _global_settings = cast('WebEngineSettings', None)
 parsed_user_agent: Optional[websettings.UserAgent] = None
 
 _qute_scheme_handler = cast(webenginequtescheme.QuteSchemeHandler, None)
+_gm_scheme_handler = cast('gmscheme.GmSchemeHandler', None)
 _req_interceptor = cast('interceptor.RequestInterceptor', None)
 _download_manager = cast(webenginedownloads.DownloadManager, None)
 _extension_signal_connected = False
@@ -443,6 +444,7 @@ def _init_profile(profile: QWebEngineProfile) -> None:
     profile.setter.init_profile()  # type: ignore[attr-defined]
 
     _qute_scheme_handler.install(profile)
+    _gm_scheme_handler.install(profile)
     _req_interceptor.install(profile)
     _download_manager.install(profile)
     cookies.install_filter(profile)
@@ -811,6 +813,12 @@ def init():
     startup_checkpoint("      QuteSchemeHandler()")
     log.init.debug("Initializing qute://* handler...")
     _qute_scheme_handler = webenginequtescheme.QuteSchemeHandler(parent=app)
+
+    global _gm_scheme_handler
+    startup_checkpoint("      GmSchemeHandler()")
+    log.init.debug("Initializing qute-gm://* handler...")
+    from qutebrowser.browser.webengine import gmscheme
+    _gm_scheme_handler = gmscheme.GmSchemeHandler(parent=app)
 
     global _req_interceptor
     startup_checkpoint("      RequestInterceptor()")

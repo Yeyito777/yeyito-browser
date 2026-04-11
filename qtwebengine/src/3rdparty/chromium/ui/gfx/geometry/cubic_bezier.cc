@@ -23,7 +23,13 @@ const int kMaxNewtonIterations = 4;
 
 }  // namespace
 
-static const double kBezierEpsilon = 1e-7;
+// Use 1e-5 epsilon to match the standard browser cubic-bezier evaluation
+// that websites (including fingerprinting checks) expect.  The original
+// Chromium value of 1e-7 combined with Newton's method converges to
+// slightly different parameter values than the pure-bisection algorithm
+// used by web-standard implementations, causing hash-based verification
+// (e.g. x-client-transaction-id) to fail.
+static const double kBezierEpsilon = 1e-5;
 
 double CubicBezier::ToFinite(double value) {
   // TODO(crbug.com/40808348): We can clamp this in numeric operation helper
@@ -186,57 +192,29 @@ double CubicBezier::SolveCurveX(double x, double epsilon) const {
   DCHECK_GE(x, 0.0);
   DCHECK_LE(x, 1.0);
 
-  double t0;
-  double t1;
-  double t2 = x;
-  double x2;
-  double d2;
-  int i;
-
 #ifndef NDEBUG
   DCHECK(monotonically_increasing_);
 #endif
 
-  // Linear interpolation of spline curve for initial guess.
-  double delta_t = 1.0 / (CUBIC_BEZIER_SPLINE_SAMPLES - 1);
-  for (i = 1; i < CUBIC_BEZIER_SPLINE_SAMPLES; i++) {
-    if (x <= spline_samples_[i]) {
-      t1 = delta_t * i;
-      t0 = t1 - delta_t;
-      t2 = t0 + (t1 - t0) * (x - spline_samples_[i - 1]) /
-                    (spline_samples_[i] - spline_samples_[i - 1]);
-      break;
-    }
-  }
+  // Pure bisection — matches the reference algorithm that web-standard
+  // cubic-bezier implementations use.  Newton's method + spline LUT
+  // converges to subtly different parameter values which breaks sites
+  // that hash the computed animation state for verification.
+  double t0 = 0.0;
+  double t1 = 1.0;
+  double t2 = 0.0;
 
-  // Perform a few iterations of Newton's method -- normally very fast.
-  // See https://en.wikipedia.org/wiki/Newton%27s_method.
-  double newton_epsilon = std::min(kBezierEpsilon, epsilon);
-  for (i = 0; i < kMaxNewtonIterations; i++) {
-    x2 = SampleCurveX(t2) - x;
-    if (fabs(x2) < newton_epsilon)
-      return t2;
-    d2 = SampleCurveDerivativeX(t2);
-    if (fabs(d2) < kBezierEpsilon)
-      break;
-    t2 = t2 - x2 / d2;
-  }
-  if (fabs(x2) < epsilon)
-    return t2;
-
-  // Fall back to the bisection method for reliability.
   while (t0 < t1) {
-    x2 = SampleCurveX(t2);
-    if (fabs(x2 - x) < epsilon)
+    t2 = (t0 + t1) * 0.5;
+    double x2 = SampleCurveX(t2);
+    if (fabs(x - x2) < epsilon)
       return t2;
-    if (x > x2)
+    if (x2 < x)
       t0 = t2;
     else
       t1 = t2;
-    t2 = (t1 + t0) * .5;
   }
 
-  // Failure.
   return t2;
 }
 

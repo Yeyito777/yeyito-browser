@@ -55,7 +55,10 @@
     }
 
 
-    // Almost verbatim copy from Eric
+    // Cross-origin HTTP proxy via qute-gm:// scheme.
+    // Routes requests through qutebrowser's Python backend, bypassing the
+    // page's Content-Security-Policy.  The qute-gm scheme is registered
+    // with ContentSecurityPolicyIgnored so fetch() to it always succeeds.
     function GM_xmlhttpRequest(/* object */ details) {
         details.method = details.method ? details.method.toUpperCase() : "GET";
 
@@ -63,37 +66,77 @@
             throw new Error("GM_xmlhttpRequest requires a URL.");
         }
 
-        // build XMLHttpRequest object
-        const oXhr = new XMLHttpRequest();
-        // run it
-        if ("onreadystatechange" in details) {
-            oXhr.onreadystatechange = function() {
-                details.onreadystatechange(oXhr);
-            };
-        }
-        if ("onload" in details) {
-            oXhr.onload = function() { details.onload(oXhr); };
-        }
-        if ("onerror" in details) {
-            oXhr.onerror = function () { details.onerror(oXhr); };
-        }
-        if ("overrideMimeType" in details) {
-            oXhr.overrideMimeType(details.overrideMimeType);
-        }
+        const spec = {
+            url: details.url,
+            method: details.method,
+            headers: details.headers || {},
+            data: details.data || null,
+        };
 
-        oXhr.open(details.method, details.url, true);
+        const controller = new AbortController();
 
-        if ("headers" in details) {
-            for (const header in details.headers) {
-                oXhr.setRequestHeader(header, details.headers[header]);
+        const proxyUrl = "qutegm:/fetch?spec=" + encodeURIComponent(JSON.stringify(spec));
+
+        fetch(proxyUrl, {
+            signal: controller.signal,
+        }).then(proxyResp => proxyResp.json()).then(r => {
+            // Build a response object mimicking XMLHttpRequest/GM response
+            const responseText = r.response || "";
+
+            // Convert latin-1 string back to bytes for blob responses
+            const bytes = new Uint8Array(responseText.length);
+            for (let i = 0; i < responseText.length; i++) {
+                bytes[i] = responseText.charCodeAt(i);
             }
-        }
+            const blob = new Blob([bytes]);
 
-        if ("data" in details) {
-            oXhr.send(details.data);
-        } else {
-            oXhr.send();
-        }
+            const resp = {
+                readyState: 4,
+                status: r.status,
+                statusText: r.statusText,
+                responseHeaders: r.responseHeaders || "",
+                responseText: responseText,
+                response: details.responseType === "blob" ? blob :
+                          details.responseType === "arraybuffer" ? bytes.buffer :
+                          details.responseType === "json" ? (() => { try { return JSON.parse(responseText); } catch(e) { return null; } })() :
+                          responseText,
+                finalUrl: r.finalUrl || details.url,
+                // Convenience helpers matching fetch Response API
+                blob: () => Promise.resolve(blob),
+                arrayBuffer: () => blob.arrayBuffer(),
+                text: () => Promise.resolve(responseText),
+                json: async () => JSON.parse(responseText),
+                headers: new Headers(),
+                ok: r.status >= 200 && r.status < 300,
+            };
+
+            // Parse response headers into Headers object
+            if (r.responseHeaders) {
+                for (const line of r.responseHeaders.split("\r\n")) {
+                    const idx = line.indexOf(":");
+                    if (idx > 0) {
+                        try {
+                            resp.headers.append(line.slice(0, idx).trim(), line.slice(idx + 1).trim());
+                        } catch(e) {}
+                    }
+                }
+            }
+
+            if (r.error) {
+                if ("onerror" in details) details.onerror(resp);
+            } else {
+                if ("onload" in details) details.onload(resp);
+            }
+        }).catch(err => {
+            if (err.name === "AbortError") {
+                if ("onabort" in details) details.onabort();
+            } else {
+                const errResp = { readyState: 4, status: 0, statusText: String(err), responseText: "", response: "" };
+                if ("onerror" in details) details.onerror(errResp);
+            }
+        });
+
+        return { abort: () => controller.abort() };
     }
 
     function GM_addStyle(/* String */ styles) {

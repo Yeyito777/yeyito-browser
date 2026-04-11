@@ -52,6 +52,7 @@ class GreasemonkeyScript:
         self.script_meta = None
         self.runs_on_sub_frames = True
         self.jsworld = "main"
+        self.no_proxy = False
         self.name = ''
         self.dedup_suffix = 1
 
@@ -76,6 +77,8 @@ class GreasemonkeyScript:
                 self.requires.append(value)
             elif name == 'qute-js-world':
                 self.jsworld = value
+            elif name == 'qute-no-proxy':
+                self.no_proxy = True
 
         if not self.name:
             if filename:
@@ -171,9 +174,13 @@ class GreasemonkeyScript:
         numbers in the source script directly.
         """
         # Don't use Proxy on this webkit version, the support isn't there.
+        # Also allow scripts to opt out via @qute-no-proxy (e.g. scripts that
+        # use their own Proxy objects which conflict with the window Proxy
+        # wrapper, causing infinite recursion in get traps).
         use_proxy = not (
-            objects.backend == usertypes.Backend.QtWebKit and
-            version.qWebKitVersion() == '602.1')
+            self.no_proxy or (
+                objects.backend == usertypes.Backend.QtWebKit and
+                version.qWebKitVersion() == '602.1'))
         template = jinja.js_environment.get_template('greasemonkey_wrapper.js')
         return template.render(
             scriptName=javascript.string_escape(

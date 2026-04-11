@@ -128,3 +128,7 @@ def init():
             QWebEngineUrlScheme.Flag.LocalScheme |
             QWebEngineUrlScheme.Flag.LocalAccessAllowed)
         QWebEngineUrlScheme.registerScheme(scheme)
+
+    # Also register the qute-gm:// scheme for Greasemonkey cross-origin proxy
+    from qutebrowser.browser.webengine import gmscheme
+    gmscheme.init()
