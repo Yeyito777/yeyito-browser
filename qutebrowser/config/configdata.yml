@@ -3587,7 +3587,7 @@ fonts.contextmenu:
   type:
     name: Font
     none_ok: true
-  default: null
+  default: default_size default_family
   desc: >-
     Font used for the context menu.
 
@@ -3657,7 +3657,7 @@ fonts.web.family.standard:
   desc: Font family for standard fonts.
 
 fonts.web.family.fixed:
-  default: ''
+  default: 'JetBrains Mono'
   supports_pattern: true
   type:
     name: FontFamily
@@ -3681,7 +3681,7 @@ fonts.web.family.sans_serif:
   desc: Font family for sans-serif fonts.
 
 fonts.web.family.cursive:
-  default: ''
+  default: 'JetBrains Mono'
   supports_pattern: true
   type:
     name: FontFamily

@@ -23,6 +23,14 @@
 
 @namespace "http://www.w3.org/1999/xhtml";
 
+html,
+html * {
+    font-family: "JetBrains Mono" !important;
+    font-variant-ligatures: none !important;
+    font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "kern" 0 !important;
+    font-kerning: none !important;
+}
+
 html {
     display: block;
 }
@@ -450,7 +458,10 @@ textarea {
   white-space: pre-wrap;
   word-wrap: break-word;
   background-color: Field;
-  font-family: monospace;
+  font-family: "JetBrains Mono" !important;
+  font-variant-ligatures: none !important;
+  font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "kern" 0 !important;
+  font-kerning: none !important;
 }
 
 input {
@@ -529,6 +540,28 @@ input[type="url" i] {
   padding-inline: 2px;
 }
 
+input:not([type i]),
+input[type="email" i],
+input[type="number" i],
+input[type="password" i],
+input[type="search" i],
+input[type="tel" i],
+input[type="text" i],
+input[type="url" i] {
+  font-family: "JetBrains Mono" !important;
+  font-variant-ligatures: none !important;
+  font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "kern" 0 !important;
+  font-kerning: none !important;
+}
+
+[contenteditable]:not([contenteditable="false" i]),
+[contenteditable]:not([contenteditable="false" i]) * {
+  font-family: "JetBrains Mono" !important;
+  font-variant-ligatures: none !important;
+  font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "kern" 0 !important;
+  font-kerning: none !important;
+}
+
 input[type="tel" i] {
   direction: ltr;
 }
@@ -587,8 +620,12 @@ textarea::-internal-input-suggested {
     overflow-anchor: none;
 }
 
+input::-internal-input-suggested,
 textarea::-internal-input-suggested {
-  font-family: monospace !important;
+  font-family: "JetBrains Mono" !important;
+  font-variant-ligatures: none !important;
+  font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "kern" 0 !important;
+  font-kerning: none !important;
 }
 
 input[type="password" i] {
@@ -1187,12 +1224,12 @@ i, cite, em, var, address, dfn {
 }
 
 tt, code, kbd, samp {
-    font-family: monospace
+    font-family: "JetBrains Mono"
 }
 
 pre, xmp, plaintext, listing {
     display: block;
-    font-family: monospace;
+    font-family: "JetBrains Mono";
     white-space: pre;
     margin: 1__qem 0
 }

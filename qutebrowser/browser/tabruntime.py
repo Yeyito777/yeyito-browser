@@ -31,11 +31,20 @@ class TabRuntimeManager(QObject):
 
         # Wipe and recreate (handles crash leftovers)
         shutil.rmtree(self._tabs_dir, ignore_errors=True)
-        self._tabs_dir.mkdir(parents=True, exist_ok=True)
+        self._ensure_tabs_dir()
 
         tabbed_browser.new_tab.connect(self._on_new_tab)
         tabbed_browser.shutting_down.connect(self._on_shutdown)
         tabbed_browser.widget.tab_bar().tabMoved.connect(self._update_indices)
+
+    def _ensure_tabs_dir(self):
+        self._tabs_dir.mkdir(parents=True, exist_ok=True)
+
+    def _ensure_tab_dir(self, tab_id):
+        self._ensure_tabs_dir()
+        tab_dir = self._tabs_dir / tab_id
+        tab_dir.mkdir(parents=True, exist_ok=True)
+        return tab_dir
 
     def _on_new_tab(self, tab, idx):
         tab_id = str(tab.tab_id)
@@ -51,7 +60,7 @@ class TabRuntimeManager(QObject):
             'window': str(tab.win_id),
             'created_at': datetime.datetime.now().isoformat(),
         }
-        (self._tabs_dir / tab_id).mkdir(exist_ok=True)
+        self._ensure_tab_dir(tab_id)
         self._write_tab(tab_id)
 
         # Per-tab signal connections
@@ -104,6 +113,7 @@ class TabRuntimeManager(QObject):
                 self._tab_data[tid]['index'] = str(i)
                 self._write_tab(tid)
                 tab_ids.append(tid)
+        self._ensure_tabs_dir()
         order_file = self._tabs_dir / 'order'
         try:
             order_file.write_text(
@@ -120,7 +130,7 @@ class TabRuntimeManager(QObject):
         data = self._tab_data.get(tab_id)
         if not data:
             return
-        filepath = self._tabs_dir / tab_id / 'tab-data.info'
+        filepath = self._ensure_tab_dir(tab_id) / 'tab-data.info'
         try:
             filepath.write_text(
                 '\n'.join(f'{k}: {v}' for k, v in data.items()) + '\n')
@@ -139,7 +149,7 @@ class TabRuntimeManager(QObject):
         """Append a console message to the tab's console.log file."""
         if tab_id not in self._tab_data:
             return
-        log_path = self._tabs_dir / tab_id / 'console.log'
+        log_path = self._ensure_tab_dir(tab_id) / 'console.log'
         timestamp = datetime.datetime.now().isoformat()
         entry = f'[{timestamp}] {level.name.upper()} {source}:{line} — {msg}\n'
         try:
@@ -152,7 +162,7 @@ class TabRuntimeManager(QObject):
         """Clear the console.log file on navigation."""
         if tab_id not in self._tab_data:
             return
-        log_path = self._tabs_dir / tab_id / 'console.log'
+        log_path = self._ensure_tab_dir(tab_id) / 'console.log'
         try:
             log_path.write_text('')
         except FileNotFoundError:
@@ -175,7 +185,7 @@ class TabRuntimeManager(QObject):
         if tab is None:
             return False
 
-        result_path = self._tabs_dir / tab_id_str / 'console-result'
+        result_path = self._ensure_tab_dir(tab_id_str) / 'console-result'
 
         setup_js = (
             '(function(){'
@@ -236,7 +246,7 @@ class TabRuntimeManager(QObject):
         if tab is None:
             return False
 
-        dom_path = self._tabs_dir / tab_id_str / 'dom.html'
+        dom_path = self._ensure_tab_dir(tab_id_str) / 'dom.html'
 
         def _on_result(html):
             if html is not None:
@@ -307,7 +317,7 @@ class TabRuntimeManager(QObject):
         if tab is None:
             return False
 
-        screenshot_path = self._tabs_dir / tab_id_str / 'screenshot.png'
+        screenshot_path = self._ensure_tab_dir(tab_id_str) / 'screenshot.png'
 
         if window_mode:
             main_window = self._tabbed_browser.window()
@@ -381,7 +391,7 @@ class TabRuntimeManager(QObject):
         tab = self._find_tab(tab_id_str)
         if tab is None:
             return False
-        result_path = self._tabs_dir / tab_id_str / 'network.json'
+        result_path = self._ensure_tab_dir(tab_id_str) / 'network.json'
 
         def _on_result(data):
             try:
@@ -403,7 +413,7 @@ class TabRuntimeManager(QObject):
         tab = self._find_tab(tab_id_str)
         if tab is None:
             return False
-        result_path = self._tabs_dir / tab_id_str / f'request-{request_id}.json'
+        result_path = self._ensure_tab_dir(tab_id_str) / f'request-{request_id}.json'
         sentinel = f'__qb_nr_{request_id}'
 
         def _write(obj):
@@ -471,7 +481,7 @@ class TabRuntimeManager(QObject):
         tab = self._find_tab(tab_id_str)
         if tab is None:
             return False
-        body_path = self._tabs_dir / tab_id_str / 'network-body'
+        body_path = self._ensure_tab_dir(tab_id_str) / 'network-body'
 
         def _on_result(data):
             try:
@@ -490,7 +500,7 @@ class TabRuntimeManager(QObject):
         tab = self._find_tab(tab_id_str)
         if tab is None:
             return False
-        result_path = self._tabs_dir / tab_id_str / 'network.json'
+        result_path = self._ensure_tab_dir(tab_id_str) / 'network.json'
 
         def _on_result(data):
             try:
@@ -519,7 +529,7 @@ class TabRuntimeManager(QObject):
         if tab is None:
             return False
 
-        result_path = self._tabs_dir / tab_id_str / 'command-result'
+        result_path = self._ensure_tab_dir(tab_id_str) / 'command-result'
         captured = []
 
         def _on_message(info):

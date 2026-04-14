@@ -39,7 +39,7 @@ from collections.abc import Iterable
 
 from qutebrowser.qt import machinery
 from qutebrowser.qt.widgets import QApplication, QWidget
-from qutebrowser.qt.gui import QDesktopServices, QPixmap, QIcon
+from qutebrowser.qt.gui import QDesktopServices, QPixmap, QIcon, QFontDatabase
 from qutebrowser.qt.core import pyqtSlot, QUrl, QObject, QEvent, pyqtSignal, Qt
 
 import qutebrowser
@@ -103,6 +103,21 @@ def _set_process_name(basedir):
     except (OSError, AttributeError, TypeError):
         # Non-Linux or ctypes unavailable — not critical
         pass
+
+
+TERMINAL_FONT_FAMILY = 'JetBrains Mono'
+
+
+def _set_global_monospace_font(app: QApplication) -> None:
+    """Force the UI font to the terminal font while keeping the current size."""
+    font = app.font()
+    if TERMINAL_FONT_FAMILY in QFontDatabase.families():
+        font.setFamily(TERMINAL_FONT_FAMILY)
+    else:
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        font.setFamily(fixed_font.family())
+    app.setFont(font)
+
 
 
 def _basedir_in_use(basedir):
@@ -807,6 +822,7 @@ class Application(QApplication):
         log.init.debug("Qt arguments: {}".format(qt_args[1:]))
         startup_checkpoint("  QApplication.__init__() — super().__init__")
         super().__init__(qt_args)
+        _set_global_monospace_font(self)
         startup_checkpoint("  QApplication.__init__() done")
 
         objects.args = args
