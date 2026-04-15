@@ -130,16 +130,16 @@ PositionWithAffinity FrameCaret::UpdateAppearance() {
 
   PositionWithAffinity caret_position = CaretPosition();
 
-  SetBlinkingDisabled(false);
+  bool disable_blinking = IsEditablePosition(caret_position.GetPosition());
   if (RuntimeEnabledFeatures::CSSCaretAnimationEnabled() &&
       caret_position.AnchorNode() &&
       GetComputedStyleForElementOrLayoutObject(*caret_position.AnchorNode())
               ->CaretAnimation() == ECaretAnimation::kManual) {
-    SetBlinkingDisabled(true);
+    disable_blinking = true;
   }
+  SetBlinkingDisabled(disable_blinking);
 
-  // Start blinking with a black caret. Be sure not to restart if we're
-  // already blinking in the right location.
+  // Update the caret timer/visibility without restarting it unnecessarily.
   StartBlinkCaret();
 
   return caret_position;
@@ -154,8 +154,8 @@ void FrameCaret::StopCaretBlinkTimer() {
 }
 
 void FrameCaret::StartBlinkCaret() {
-  // Start blinking with a black caret. Be sure not to restart if we're
-  // already blinking in the right location at the right rate.
+  // Start the caret timer if needed. Be sure not to restart if we're already
+  // using the right visibility behavior.
   base::TimeDelta blink_interval =
       IsBlinkingDisabled() ? base::TimeDelta()
                            : LayoutTheme::GetTheme().CaretBlinkInterval();

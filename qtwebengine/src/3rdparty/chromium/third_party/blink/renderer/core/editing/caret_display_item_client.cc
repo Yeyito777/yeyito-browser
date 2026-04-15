@@ -35,12 +35,10 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
-#include "third_party/blink/renderer/core/paint/paint_auto_dark_mode.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/paint_invalidator.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_artifact_compositor.h"
-#include "third_party/blink/renderer/platform/graphics/dark_mode_filter.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 
@@ -56,6 +54,8 @@ void CaretDisplayItemClient::Trace(Visitor* visitor) const {
 }
 
 namespace {
+
+constexpr Color kCustomEditableCaretColor = Color::FromRGB(0x48, 0xca, 0xe4);
 
 inline bool CaretRendersInsideNode(const Node* node) {
   return node && !IsDisplayInsideTable(node) && !EditingIgnoresContent(*node);
@@ -205,8 +205,7 @@ void CaretDisplayItemClient::UpdateStyleAndLayoutIfNeeded(
 
   Color new_color;
   if (caret_position.AnchorNode()) {
-    new_color = caret_position.AnchorNode()->GetLayoutObject()->ResolveColor(
-        GetCSSPropertyCaretColor());
+    new_color = kCustomEditableCaretColor;
   }
   if (new_color != color_) {
     needs_paint_invalidation_ = true;
@@ -304,9 +303,7 @@ void CaretDisplayItemClient::PaintCaret(
   }
 
   gfx::Rect paint_rect = ToPixelSnappedRect(drawing_rect);
-  context.FillRect(paint_rect, color_,
-                   PaintAutoDarkMode(layout_block_->StyleRef(),
-                                     DarkModeFilter::ElementRole::kForeground));
+  context.FillRect(paint_rect, color_, AutoDarkMode::Disabled());
 }
 
 void CaretDisplayItemClient::RecordSelection(GraphicsContext& context,

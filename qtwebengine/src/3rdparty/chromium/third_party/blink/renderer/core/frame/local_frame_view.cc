@@ -4711,7 +4711,7 @@ void LocalFrameView::MapLocalToRemoteMainFrame(
 
 LayoutUnit LocalFrameView::CaretWidth() const {
   return LayoutUnit(std::max<float>(
-      1.0f, GetChromeClient()->WindowToViewportScalar(&GetFrame(), 1.0f)));
+      2.0f, GetChromeClient()->WindowToViewportScalar(&GetFrame(), 2.0f)));
 }
 
 void LocalFrameView::RegisterTapEvent(Element* target) {
