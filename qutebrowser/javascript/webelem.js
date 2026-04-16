@@ -360,30 +360,65 @@ window._qutebrowser.webelem = (function() {
     function find_scrollable_elements(containers) {
         const result = [];
         const elemSet = new Set();
+        const scrollableOverflowRe = /auto|scroll|overlay/;
+
+        function hasOverflowRange(elem) {
+            return (
+                elem.scrollHeight > elem.clientHeight ||
+                elem.scrollWidth > elem.clientWidth
+            );
+        }
+
+        function isDocumentScroller(elem) {
+            const doc = elem.ownerDocument;
+            return Boolean(
+                doc && (
+                    elem === doc.scrollingElement ||
+                    elem === doc.documentElement ||
+                    elem === doc.body
+                )
+            );
+        }
+
+        function getOverflow(elem) {
+            const win = elem.ownerDocument.defaultView || window;
+            const style = win.getComputedStyle(elem);
+            return {
+                y: style.overflowY || style.overflow,
+                x: style.overflowX || style.overflow,
+            };
+        }
 
         function isScrollable(elem) {
             // Check if element has overflow content
-            if (elem.scrollHeight <= elem.clientHeight &&
-                elem.scrollWidth <= elem.clientWidth) {
+            if (!hasOverflowRange(elem)) {
                 return false;
             }
 
-            const style = window.getComputedStyle(elem);
-            const overflowY = style.overflowY || style.overflow;
-            const overflowX = style.overflowX || style.overflow;
+            // The document scrolling element is special: even when the page is
+            // scrollable, its computed overflow is often "visible". However,
+            // if both axes are explicitly blocked (hidden/clip), including it
+            // creates a bogus top-level hint which obscures the real nested
+            // scroll container on app-style pages.
+            const overflow = getOverflow(elem);
+            if (isDocumentScroller(elem)) {
+                const blocksY = ["hidden", "clip"].includes(overflow.y);
+                const blocksX = ["hidden", "clip"].includes(overflow.x);
+                const canScrollY = elem.scrollHeight > elem.clientHeight && !blocksY;
+                const canScrollX = elem.scrollWidth > elem.clientWidth && !blocksX;
+                return canScrollX || canScrollY;
+            }
 
             return (
-                /auto|scroll/.test(overflowY) ||
-                /auto|scroll/.test(overflowX)
+                scrollableOverflowRe.test(overflow.y) ||
+                scrollableOverflowRe.test(overflow.x)
             );
         }
 
         for (const [container, frame] of containers) {
-            // Always include the main scrolling element for each container
-            // so users can select it and scroll through it (even if not currently scrollable)
             const doc = container.ownerDocument || container;
-            if (doc.scrollingElement && !elemSet.has(doc.scrollingElement)) {
-                const scrollEl = doc.scrollingElement;
+            const scrollEl = doc.scrollingElement;
+            if (scrollEl && !elemSet.has(scrollEl) && isScrollable(scrollEl)) {
                 elemSet.add(scrollEl);
                 result.push([scrollEl, frame]);
             }

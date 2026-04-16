@@ -812,7 +812,7 @@ class HintManager(QObject):
 
         _t0 = time.perf_counter()
         strings = self._hint_strings(elems)
-        # Pin the page scrolling element (first) to 'j' for easy access
+        # Pin the page scrolling element (first) to 'f' for easy access
         if self._context.group == 'scrollables' and strings:
             target = 'f'
             if target in strings:

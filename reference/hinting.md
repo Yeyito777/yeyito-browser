@@ -162,6 +162,7 @@ The `hints.selectors` config option defines which elements to hint for each grou
 | `url` | Elements with URLs | `[src]`, `[href]` |
 | `inputs` | Form inputs | `input[type="text"]`, `textarea`, etc. |
 | `hoverables` | Elements with hover behavior | Attribute selectors + `:qb-hover` magic marker |
+| `scrollables` | Scrollable containers | `:qb-scrollable` magic marker |
 
 ### The `hoverables` Selector Group
 
@@ -184,6 +185,17 @@ When `:qb-hover` appears in a selector:
 2. CSS hover detection is triggered (`find_elements_with_css_hover`)
 3. Lightweight serialization is used (faster)
 4. Results from both attribute selectors and CSS hover detection are merged
+
+### The `scrollables` Selector Group
+
+The `scrollables` group is powered by the `:qb-scrollable` marker, which:
+
+1. Finds the real document scroller when the page itself has scroll range.
+2. Finds nested overflow containers (`overflow: auto|scroll|overlay`) with
+   actual overflow.
+3. Avoids emitting bogus root hints for apps which disable page scrolling and
+   use a viewport-sized nested div instead (for example Gmail/Discord-style
+   layouts).
 
 ### Customizing Selectors
 
