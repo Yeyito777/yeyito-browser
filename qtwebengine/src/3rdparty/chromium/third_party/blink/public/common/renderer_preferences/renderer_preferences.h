@@ -41,7 +41,7 @@ struct BLINK_COMMON_EXPORT RendererPreferences {
   gfx::FontRenderParams::SubpixelRendering subpixel_rendering{
       gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE};
   bool use_subpixel_positioning{false};
-  uint32_t focus_ring_color{0xFFE59700};
+  uint32_t focus_ring_color{0xFF1D9BF0};
   uint32_t active_selection_bg_color{kDefaultActiveSelectionBgColor};
   uint32_t active_selection_fg_color{kDefaultActiveSelectionFgColor};
   uint32_t inactive_selection_bg_color{kDefaultInactiveSelectionBgColor};

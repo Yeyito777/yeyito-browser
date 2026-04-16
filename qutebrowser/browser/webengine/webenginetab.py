@@ -569,9 +569,32 @@ class WebEngineScroller(browsertab.AbstractScroller):
     def pos_perc(self):
         return self._pos_perc
 
-    def to_perc(self, x=None, y=None):
-        js_code = javascript.assemble('scroll', 'to_perc', x, y)
-        self._tab.run_js_async(js_code)
+    def to_perc(self, x=None, y=None, *, _retry=True):
+        js_code = javascript.assemble_guarded('scroll', 'to_perc', x, y)
+
+        def on_result(js_result):
+            missing = self._tab._scripts.helper_missing_from_result(js_result)
+            if missing is not None:
+                retry_cb = None
+                if _retry:
+                    retry_cb = functools.partial(self.to_perc, x, y, _retry=False)
+                self._tab._scripts.recover_missing_helper(
+                    module='scroll',
+                    function='to_perc',
+                    reason=f'x={x}, y={y}',
+                    guard_result=missing,
+                    retry_cb=retry_cb,
+                )
+                return
+
+            exception = self._tab._scripts.helper_exception_from_result(js_result)
+            if exception is not None:
+                log.webview.error(
+                    'JavaScript helper threw while scrolling to percentage: '
+                    f'{exception}'
+                )
+
+        self._tab.run_js_async(js_code, on_result)
 
     def to_point(self, point):
         js_code = javascript.assemble('window', 'scroll', point.x(), point.y())
@@ -582,14 +605,40 @@ class WebEngineScroller(browsertab.AbstractScroller):
         url.setFragment(name)
         self._tab.load_url(url)
 
-    def _smooth_scroll(self, dx, dy):
+    def _smooth_scroll(self, dx, dy, *, _retry=True):
         factor = config.val.scrolling.smooth_factor
-        js_code = javascript.assemble('scroll', 'get_scroll_target_center', dx, dy)
+        js_code = javascript.assemble_guarded('scroll', 'get_scroll_target_center', dx, dy)
         self._tab.run_js_async(
             js_code,
-            callback=functools.partial(self._do_smooth_scroll, dx, dy, factor))
+            callback=functools.partial(self._do_smooth_scroll, dx, dy, factor, _retry))
 
-    def _do_smooth_scroll(self, dx, dy, factor, js_result):
+    def _do_smooth_scroll(self, dx, dy, factor, retry, js_result):
+        missing = self._tab._scripts.helper_missing_from_result(js_result)
+        if missing is not None:
+            retry_cb = None
+            if retry:
+                retry_cb = functools.partial(self._smooth_scroll, dx, dy, _retry=False)
+            self._tab._scripts.recover_missing_helper(
+                module='scroll',
+                function='get_scroll_target_center',
+                reason=f'dx={dx}, dy={dy}',
+                guard_result=missing,
+                retry_cb=retry_cb,
+            )
+            if not retry:
+                self._widget.page().smoothScrollBy(dx, dy, factor)
+            return
+
+        exception = self._tab._scripts.helper_exception_from_result(js_result)
+        if exception is not None:
+            log.webview.error(
+                'JavaScript helper threw while computing smooth scroll target: '
+                f'{exception}'
+            )
+            self._widget.page().smoothScrollBy(dx, dy, factor)
+            return
+
+        js_result = self._tab._scripts.unwrap_guard_result(js_result)
         if isinstance(js_result, list) and len(js_result) == 2:
             self._widget.page().smoothScrollBy(
                 dx, dy, factor, int(js_result[0]), int(js_result[1]))
@@ -599,9 +648,32 @@ class WebEngineScroller(browsertab.AbstractScroller):
     def delta(self, x=0, y=0):
         self._smooth_scroll(x, y)
 
-    def delta_page(self, x=0, y=0):
-        js_code = javascript.assemble('scroll', 'delta_page', x, y)
-        self._tab.run_js_async(js_code)
+    def delta_page(self, x=0, y=0, *, _retry=True):
+        js_code = javascript.assemble_guarded('scroll', 'delta_page', x, y)
+
+        def on_result(js_result):
+            missing = self._tab._scripts.helper_missing_from_result(js_result)
+            if missing is not None:
+                retry_cb = None
+                if _retry:
+                    retry_cb = functools.partial(self.delta_page, x, y, _retry=False)
+                self._tab._scripts.recover_missing_helper(
+                    module='scroll',
+                    function='delta_page',
+                    reason=f'x={x}, y={y}',
+                    guard_result=missing,
+                    retry_cb=retry_cb,
+                )
+                return
+
+            exception = self._tab._scripts.helper_exception_from_result(js_result)
+            if exception is not None:
+                log.webview.error(
+                    'JavaScript helper threw while paging scroll: '
+                    f'{exception}'
+                )
+
+        self._tab.run_js_async(js_code, on_result)
 
     def up(self, count=1):
         self._smooth_scroll(0, -(count * self._ARROW_SCROLL_PX))
@@ -766,7 +838,8 @@ class WebEngineElements(browsertab.AbstractElements):
 
     _tab: 'WebEngineTab'
 
-    def _js_cb_multiple(self, selector, callback, error_cb, js_elems):
+    def _js_cb_multiple(self, selector, callback, error_cb, only_visible, retry,
+                        js_elems):
         """Handle found elements coming from JS and call the real callback.
 
         Args:
@@ -775,6 +848,34 @@ class WebEngineElements(browsertab.AbstractElements):
             error_cb: The callback to call in case of an error.
             js_elems: The elements serialized from javascript.
         """
+        missing = self._tab._scripts.helper_missing_from_result(js_elems)
+        if missing is not None:
+            retry_cb = None
+            if retry:
+                retry_cb = functools.partial(
+                    self._find_css, selector, callback, error_cb,
+                    only_visible=only_visible, retry=False)
+            self._tab._scripts.recover_missing_helper(
+                module='webelem',
+                function='find_css',
+                reason=f'selector={selector!r}, only_visible={only_visible}',
+                guard_result=missing,
+                retry_cb=retry_cb,
+            )
+            if not retry:
+                error_cb(webelem.Error("Unknown error while getting elements"))
+            return
+
+        exception = self._tab._scripts.helper_exception_from_result(js_elems)
+        if exception is not None:
+            log.webview.error(
+                'JavaScript helper threw while getting elements: '
+                f'{exception}'
+            )
+            error_cb(webelem.Error("Unknown error while getting elements"))
+            return
+
+        js_elems = self._tab._scripts.unwrap_guard_result(js_elems)
         if js_elems is None:
             url = self._tab.url().toDisplayString()
             is_deleted = sip.isdeleted(self._tab._widget)
@@ -783,13 +884,6 @@ class WebEngineElements(browsertab.AbstractElements):
                 f"URL: {url}, selector: {selector!r}, widget_deleted: {is_deleted}. "
                 f"This may indicate the page's JS context is invalid or scripts "
                 f"weren't injected properly."
-            )
-            # Run diagnostic to check if _qutebrowser namespace exists
-            self._tab.run_js_async(
-                '"use strict"; typeof window._qutebrowser !== "undefined"',
-                lambda exists: log.webview.error(
-                    f"Diagnostic: window._qutebrowser exists: {exists}"
-                )
             )
             error_cb(webelem.Error("Unknown error while getting "
                                    "elements"))
@@ -804,7 +898,7 @@ class WebEngineElements(browsertab.AbstractElements):
             elems.append(elem)
         callback(elems)
 
-    def _js_cb_single(self, callback, js_elem):
+    def _js_cb_single(self, callback, function_name, retry_cb, js_elem):
         """Handle a found focus elem coming from JS and call the real callback.
 
         Args:
@@ -812,6 +906,29 @@ class WebEngineElements(browsertab.AbstractElements):
                       Called with a WebEngineElement or None.
             js_elem: The element serialized from javascript.
         """
+        missing = self._tab._scripts.helper_missing_from_result(js_elem)
+        if missing is not None:
+            self._tab._scripts.recover_missing_helper(
+                module='webelem',
+                function=function_name,
+                reason='single element lookup',
+                guard_result=missing,
+                retry_cb=retry_cb,
+            )
+            if retry_cb is None:
+                callback(None)
+            return
+
+        exception = self._tab._scripts.helper_exception_from_result(js_elem)
+        if exception is not None:
+            log.webview.error(
+                'JavaScript helper threw while getting a single element: '
+                f'{exception}'
+            )
+            callback(None)
+            return
+
+        js_elem = self._tab._scripts.unwrap_guard_result(js_elem)
         debug_str = ('None' if js_elem is None
                      else utils.elide(repr(js_elem), 1000))
         log.webview.debug("Got element from JS: {}".format(debug_str))
@@ -822,30 +939,52 @@ class WebEngineElements(browsertab.AbstractElements):
             elem = webengineelem.WebEngineElement(js_elem, tab=self._tab)
             callback(elem)
 
+    def _find_css(self, selector, callback, error_cb, *, only_visible=False, retry=True):
+        js_code = javascript.assemble_guarded('webelem', 'find_css', selector,
+                                              only_visible)
+        js_cb = functools.partial(
+            self._js_cb_multiple, selector, callback, error_cb, only_visible, retry)
+        self._tab.run_js_async(js_code, js_cb)
+
     def find_css(self, selector, callback, error_cb, *, only_visible=False):
-        js_code = javascript.assemble('webelem', 'find_css', selector,
-                                      only_visible)
-        js_cb = functools.partial(self._js_cb_multiple, selector, callback, error_cb)
+        self._find_css(selector, callback, error_cb, only_visible=only_visible)
+
+    def _find_id(self, elem_id, callback, *, retry=True):
+        js_code = javascript.assemble_guarded('webelem', 'find_id', elem_id)
+        retry_cb = None
+        if retry:
+            retry_cb = functools.partial(self._find_id, elem_id, callback, retry=False)
+        js_cb = functools.partial(self._js_cb_single, callback, 'find_id', retry_cb)
         self._tab.run_js_async(js_code, js_cb)
 
     def find_id(self, elem_id, callback):
-        js_code = javascript.assemble('webelem', 'find_id', elem_id)
-        js_cb = functools.partial(self._js_cb_single, callback)
+        self._find_id(elem_id, callback)
+
+    def _find_focused(self, callback, *, retry=True):
+        js_code = javascript.assemble_guarded('webelem', 'find_focused')
+        retry_cb = None
+        if retry:
+            retry_cb = functools.partial(self._find_focused, callback, retry=False)
+        js_cb = functools.partial(self._js_cb_single, callback, 'find_focused', retry_cb)
         self._tab.run_js_async(js_code, js_cb)
 
     def find_focused(self, callback):
-        js_code = javascript.assemble('webelem', 'find_focused')
-        js_cb = functools.partial(self._js_cb_single, callback)
+        self._find_focused(callback)
+
+    def _find_at_pos(self, pos, callback, *, retry=True):
+        assert pos.x() >= 0, pos
+        assert pos.y() >= 0, pos
+        scaled_pos = pos / self._tab.zoom.factor()
+        js_code = javascript.assemble_guarded('webelem', 'find_at_pos',
+                                              scaled_pos.x(), scaled_pos.y())
+        retry_cb = None
+        if retry:
+            retry_cb = functools.partial(self._find_at_pos, QPointF(pos), callback, retry=False)
+        js_cb = functools.partial(self._js_cb_single, callback, 'find_at_pos', retry_cb)
         self._tab.run_js_async(js_code, js_cb)
 
     def find_at_pos(self, pos, callback):
-        assert pos.x() >= 0, pos
-        assert pos.y() >= 0, pos
-        pos /= self._tab.zoom.factor()
-        js_code = javascript.assemble('webelem', 'find_at_pos',
-                                      pos.x(), pos.y())
-        js_cb = functools.partial(self._js_cb_single, callback)
-        self._tab.run_js_async(js_code, js_cb)
+        self._find_at_pos(pos, callback)
 
 
 class WebEngineAudio(browsertab.AbstractAudio):
@@ -1083,6 +1222,128 @@ class _WebEngineScripts(QObject):
         self._widget = cast(webview.WebEngineView, None)
         self._greasemonkey = greasemonkey.gm_manager
 
+    @staticmethod
+    def helper_missing_from_result(js_result):
+        if (isinstance(js_result, dict) and
+                js_result.get('__qute_guard_status') == 'missing-helper'):
+            return js_result
+        return None
+
+    @staticmethod
+    def helper_exception_from_result(js_result):
+        if (isinstance(js_result, dict) and
+                js_result.get('__qute_guard_status') == 'exception'):
+            return js_result
+        return None
+
+    @staticmethod
+    def unwrap_guard_result(js_result):
+        if (isinstance(js_result, dict) and
+                js_result.get('__qute_guard_status') == 'ok'):
+            return js_result.get('result')
+        return js_result
+
+    def _core_js_source(self):
+        return javascript.wrap_global(
+            'scripts',
+            resources.read_file('javascript/scroll.js'),
+            resources.read_file('javascript/webelem.js'),
+            resources.read_file('javascript/caret.js'),
+            expected_helpers=['scroll', 'webelem', 'caret'],
+        )
+
+    def _stylesheet_js_source(self, url=None):
+        if url is None or not url.isValid():
+            url = self._tab.url()
+        css = shared.get_user_stylesheet(url=url)
+        return javascript.wrap_global(
+            'stylesheet',
+            resources.read_file('javascript/stylesheet.js'),
+            javascript.assemble('stylesheet', 'set_css', css),
+            expected_helpers=['stylesheet'],
+        )
+
+    def _script_is_injected(self, name):
+        scripts = self._widget.page().scripts()
+        script_name = f'_qute_{name}'
+        if machinery.IS_QT6:
+            return bool(scripts.find(script_name))
+        script = scripts.findScript(script_name)
+        return not script.isNull()
+
+    def _helper_state_script(self):
+        return '''"use strict";
+(() => {
+    const qute = window._qutebrowser;
+    const info = (name) => {
+        const value = qute && qute[name];
+        return {
+            present: value !== undefined && value !== null,
+            type: value === null ? "null" : typeof value,
+        };
+    };
+    return {
+        has_qutebrowser: qute !== undefined && qute !== null,
+        initialized: qute && qute.initialized && typeof qute.initialized === "object"
+            ? Object.keys(qute.initialized).sort()
+            : null,
+        scroll: info("scroll"),
+        webelem: info("webelem"),
+        caret: info("caret"),
+        stylesheet: info("stylesheet"),
+    };
+})();'''
+
+    def _log_helper_state(self, prefix, state):
+        log.webview.error(f"{prefix}: {state}")
+
+    def _recover_current_page_helpers(self, callback=None):
+        core_js = self._core_js_source()
+        stylesheet_js = self._stylesheet_js_source(url=self._tab.url())
+
+        self._remove_js('js')
+        self._inject_js('js', core_js, subframes=True)
+        self._remove_js('stylesheet')
+        self._inject_js('stylesheet', stylesheet_js, subframes=True)
+
+        def after_stylesheet(_result):
+            if callback is not None:
+                callback()
+
+        def after_core(_result):
+            self._tab.run_js_async(stylesheet_js, after_stylesheet)
+
+        self._tab.run_js_async(core_js, after_core)
+
+    def recover_missing_helper(self, *, module, function, reason,
+                               guard_result=None, retry_cb=None):
+        url = self._tab.url().toDisplayString()
+        renderer_pid = self._tab.renderer_process_pid()
+        script_state = {
+            'js_injected': self._script_is_injected('js'),
+            'stylesheet_injected': self._script_is_injected('stylesheet'),
+        }
+        log.webview.error(
+            'Detected missing qutebrowser JS helper while running '
+            f'{module}.{function} on {url}. reason={reason!r}, '
+            f'renderer_pid={renderer_pid}, script_state={script_state}, '
+            f'guard_result={guard_result}'
+        )
+
+        def after_post_state(post_state):
+            self._log_helper_state('JS helper state after recovery', post_state)
+            if retry_cb is not None:
+                retry_cb()
+
+        def after_recovery():
+            self._tab.run_js_async(self._helper_state_script(), after_post_state)
+
+        def after_pre_state(pre_state):
+            self._log_helper_state('JS helper state before recovery', pre_state)
+            self._recover_current_page_helpers(after_recovery)
+
+        self._tab.run_js_async(self._helper_state_script(), after_pre_state)
+
     def connect_signals(self):
         """Connect signals to our private slots."""
         config.instance.changed.connect(self._on_config_changed)
@@ -1107,13 +1368,41 @@ class _WebEngineScripts(QObject):
         self._update_stylesheet(url=url)
 
     @pyqtSlot(bool)
-    def _update_stylesheet(self, searching=False, url=None):
+    def _update_stylesheet(self, searching=False, url=None, *, _retry=True):
         """Update the custom stylesheet in existing tabs."""
         if url is None or not url.isValid():
             url = self._tab.url()
         css = shared.get_user_stylesheet(url=url, searching=searching)
-        code = javascript.assemble('stylesheet', 'set_css', css)
-        self._tab.run_js_async(code)
+        code = javascript.assemble_guarded('stylesheet', 'set_css', css)
+
+        def on_result(js_result):
+            missing = self.helper_missing_from_result(js_result)
+            if missing is not None:
+                retry_cb = None
+                if _retry:
+                    retry_cb = functools.partial(
+                        self._update_stylesheet,
+                        searching=searching,
+                        url=url,
+                        _retry=False,
+                    )
+                self.recover_missing_helper(
+                    module='stylesheet',
+                    function='set_css',
+                    reason=f'searching={searching}',
+                    guard_result=missing,
+                    retry_cb=retry_cb,
+                )
+                return
+
+            exception = self.helper_exception_from_result(js_result)
+            if exception is not None:
+                log.webview.error(
+                    'JavaScript helper threw while updating stylesheet: '
+                    f'{exception}'
+                )
+
+        self._tab.run_js_async(code, on_result)
 
     def _inject_js(self, name, js_code, *,
                    world=QWebEngineScript.ScriptWorldId.ApplicationWorld,
@@ -1141,12 +1430,7 @@ class _WebEngineScripts(QObject):
 
     def init(self):
         """Initialize global qutebrowser JavaScript."""
-        js_code = javascript.wrap_global(
-            'scripts',
-            resources.read_file('javascript/scroll.js'),
-            resources.read_file('javascript/webelem.js'),
-            resources.read_file('javascript/caret.js'),
-        )
+        js_code = self._core_js_source()
         # FIXME:qtwebengine what about subframes=True?
         self._inject_js('js', js_code, subframes=True)
         self._init_stylesheet()
@@ -1165,12 +1449,7 @@ class _WebEngineScripts(QObject):
         if url is None or not url.isValid():
             url = self._tab.url()
         self._remove_js('stylesheet')
-        css = shared.get_user_stylesheet(url=url)
-        js_code = javascript.wrap_global(
-            'stylesheet',
-            resources.read_file('javascript/stylesheet.js'),
-            javascript.assemble('stylesheet', 'set_css', css),
-        )
+        js_code = self._stylesheet_js_source(url=url)
         self._inject_js('stylesheet', js_code, subframes=True)
 
     def prepare_for_url(self, url: QUrl) -> None:

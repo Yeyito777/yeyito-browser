@@ -107,10 +107,21 @@ def test_assemble(base, expected_base):
     assert javascript.assemble(base, 'func', 23) == expected
 
 
+def test_assemble_guarded():
+    source = javascript.assemble_guarded('foo', 'func', 23)
+    assert '"__qute_guard_status": "missing-helper"' in source
+    assert '"module": "foo"' in source
+    assert '"function": "func"' in source
+    assert 'helper["func"](23)' in source
+
+
 def test_wrap_global():
     source = javascript.wrap_global('name',
                                     'console.log("foo");',
-                                    'console.log("bar");')
+                                    'console.log("bar");',
+                                    expected_helpers=['scroll', 'webelem'])
     assert 'window._qutebrowser.initialized["name"]' in source
+    assert 'const expectedHelpers = ["scroll", "webelem"]' in source
+    assert 'helpersPresent' in source
     assert 'console.log("foo");' in source
     assert 'console.log("bar");' in source

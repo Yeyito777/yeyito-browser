@@ -65,8 +65,74 @@ def assemble(module: str, function: str, *args: _JsArgType) -> str:
     return code
 
 
-def wrap_global(name: str, *sources: str) -> str:
+def assemble_guarded(module: str, function: str, *args: _JsArgType) -> str:
+    """Assemble a guarded JavaScript helper call.
+
+    Unlike :func:`assemble`, this returns structured diagnostics instead of
+    throwing if the target helper namespace/function is missing.
+    """
+    js_args = ', '.join(to_js(arg) for arg in args)
+    helper_expr = (
+        'window'
+        if module == 'window'
+        else f'(window._qutebrowser && window._qutebrowser.{module})'
+    )
+    return f'''"use strict";
+(() => {{
+    const helper = {helper_expr};
+    if (!helper || typeof helper[{to_js(function)}] !== "function") {{
+        const qute = window._qutebrowser;
+        let initialized = null;
+        if (qute && qute.initialized && typeof qute.initialized === "object") {{
+            try {{
+                initialized = Object.keys(qute.initialized).sort();
+            }} catch (_error) {{
+                initialized = ["<uninspectable>"];
+            }}
+        }}
+
+        let helperKeys = null;
+        if (helper && typeof helper === "object") {{
+            try {{
+                helperKeys = Object.keys(helper).sort();
+            }} catch (_error) {{
+                helperKeys = ["<uninspectable>"];
+            }}
+        }}
+
+        return {{
+            "__qute_guard_status": "missing-helper",
+            "module": {to_js(module)},
+            "function": {to_js(function)},
+            "has_qutebrowser": !!qute,
+            "helper_type": helper === null ? "null" : typeof helper,
+            "helper_keys": helperKeys,
+            "initialized": initialized,
+        }};
+    }}
+
+    try {{
+        return {{
+            "__qute_guard_status": "ok",
+            "result": helper[{to_js(function)}]({js_args}),
+        }};
+    }} catch (error) {{
+        return {{
+            "__qute_guard_status": "exception",
+            "module": {to_js(module)},
+            "function": {to_js(function)},
+            "error": error && error.toString ? error.toString() : String(error),
+        }};
+    }}
+}})();'''
+
+
+def wrap_global(name: str, *sources: str, expected_helpers: Sequence[str] = ()) -> str:
     """Wrap a script using window._qutebrowser."""
     from qutebrowser.utils import jinja  # circular import
     template = jinja.js_environment.get_template('global_wrapper.js')
-    return template.render(code='\n'.join(sources), name=name)
+    return template.render(
+        code='\n'.join(sources),
+        name=name,
+        expected_helpers=to_js(list(expected_helpers)),
+    )

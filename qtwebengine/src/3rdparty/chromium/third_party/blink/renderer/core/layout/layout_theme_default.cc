@@ -196,7 +196,7 @@ void LayoutThemeDefault::AdjustInnerSpinButtonStyle(
 }
 
 Color LayoutThemeDefault::PlatformFocusRingColor() const {
-  constexpr Color focus_ring_color = Color::FromRGBA32(0xFFE59700);
+  constexpr Color focus_ring_color = Color::FromRGBA32(0xFF1D9BF0);
   return focus_ring_color;
 }
 
