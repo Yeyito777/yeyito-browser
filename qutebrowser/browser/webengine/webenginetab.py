@@ -947,7 +947,29 @@ class WebEngineElements(browsertab.AbstractElements):
         self._tab.run_js_async(js_code, js_cb)
 
     def find_css(self, selector, callback, error_cb, *, only_visible=False):
-        self._find_css(selector, callback, error_cb, only_visible=only_visible)
+        if ':qb-hover' not in selector:
+            self._find_css(selector, callback, error_cb, only_visible=only_visible)
+            return
+
+        js_code = javascript.assemble_guarded('hovertrack', 'mark_frames')
+
+        def on_result(js_result):
+            missing = self._tab._scripts.helper_missing_from_result(js_result)
+            if missing is not None:
+                log.webview.debug(
+                    'Main-world hovertrack helper missing, falling back to CSS-only '
+                    f'hover detection: {missing}'
+                )
+            else:
+                exception = self._tab._scripts.helper_exception_from_result(js_result)
+                if exception is not None:
+                    log.webview.warning(
+                        'Main-world hovertrack helper threw while preparing hover '
+                        f'hints: {exception}'
+                    )
+            self._find_css(selector, callback, error_cb, only_visible=only_visible)
+
+        self._tab.run_js_async(js_code, on_result, world=usertypes.JsWorld.main)
 
     def _find_id(self, elem_id, callback, *, retry=True):
         js_code = javascript.assemble_guarded('webelem', 'find_id', elem_id)
@@ -1431,8 +1453,19 @@ class _WebEngineScripts(QObject):
     def init(self):
         """Initialize global qutebrowser JavaScript."""
         js_code = self._core_js_source()
+        hovertrack_js = javascript.wrap_global(
+            'hovertrack',
+            resources.read_file('javascript/hovertrack.js'),
+            expected_helpers=['hovertrack'],
+        )
         # FIXME:qtwebengine what about subframes=True?
         self._inject_js('js', js_code, subframes=True)
+        self._inject_js(
+            'hovertrack', hovertrack_js,
+            world=QWebEngineScript.ScriptWorldId.MainWorld,
+            injection_point=QWebEngineScript.InjectionPoint.DocumentCreation,
+            subframes=True,
+        )
         self._init_stylesheet()
 
         self._greasemonkey.scripts_reloaded.connect(

@@ -355,6 +355,183 @@ window._qutebrowser.webelem = (function() {
         return result;
     }
 
+    // Find elements pre-marked in the main world as having JS-driven hover behavior.
+    // Returns an array of [element, frame] pairs.
+    function find_elements_with_js_hover(containers) {
+        const result = [];
+        const selector = "[data-qutebrowser-hovertrack]";
+        const interactiveSelector = [
+            "button", "a", "input", "textarea", "select", "summary",
+            "[role='button']", "[role='tab']", "[role='link']", "[role='menuitem']",
+            "[tabindex]:not([tabindex='-1'])",
+        ].join(", ");
+
+        function parseHoverTypes(elem) {
+            const value = elem.getAttribute("data-qutebrowser-hovertrack") || "";
+            return new Set(value.split(",").map((part) => part.trim()).filter(Boolean));
+        }
+
+        function hasEnterType(types) {
+            return [
+                "mouseenter", "mouseover", "mousemove",
+                "pointerenter", "pointerover", "pointermove",
+            ].some((name) => types.has(name));
+        }
+
+        function rectArea(rect) {
+            return Math.max(0, rect.width) * Math.max(0, rect.height);
+        }
+
+        function overlapRatio(a, b) {
+            const left = Math.max(a.left, b.left);
+            const right = Math.min(a.right, b.right);
+            const top = Math.max(a.top, b.top);
+            const bottom = Math.min(a.bottom, b.bottom);
+            const width = Math.max(0, right - left);
+            const height = Math.max(0, bottom - top);
+            const intersection = width * height;
+            const minArea = Math.min(rectArea(a), rectArea(b));
+            if (minArea === 0) {
+                return 0;
+            }
+            return intersection / minArea;
+        }
+
+        function areaRatio(a, b) {
+            const areaA = rectArea(a);
+            const areaB = rectArea(b);
+            const minArea = Math.max(1, Math.min(areaA, areaB));
+            const maxArea = Math.max(areaA, areaB);
+            return maxArea / minArea;
+        }
+
+        function isNearDuplicateRect(a, b) {
+            return (
+                overlapRatio(a, b) >= 0.9 &&
+                areaRatio(a, b) <= 1.35 &&
+                Math.abs(a.left - b.left) <= 20 &&
+                Math.abs(a.top - b.top) <= 20 &&
+                Math.abs(a.width - b.width) <= 40 &&
+                Math.abs(a.height - b.height) <= 40
+            );
+        }
+
+        function isDecorative(elem) {
+            return ["SPAN", "IMG", "SVG", "PATH", "USE"].includes(elem.tagName);
+        }
+
+        const candidates = [];
+        const candidateMap = new Map();
+
+        for (const [container, frame] of containers) {
+            for (const elem of container.querySelectorAll(selector)) {
+                if (candidateMap.has(elem)) {
+                    continue;
+                }
+
+                const types = parseHoverTypes(elem);
+                if (!hasEnterType(types)) {
+                    continue;
+                }
+
+                const rect = elem.getBoundingClientRect();
+                const candidate = {
+                    elem,
+                    frame,
+                    rect,
+                    types,
+                    score: 0,
+                };
+                candidates.push(candidate);
+                candidateMap.set(elem, candidate);
+            }
+        }
+
+        function candidateScore(candidate) {
+            const elem = candidate.elem;
+            const rect = candidate.rect;
+            const types = candidate.types;
+            const win = elem.ownerDocument.defaultView || window;
+            const viewportArea = Math.max(1, win.innerWidth * win.innerHeight);
+            const area = rectArea(rect);
+            let score = 0;
+
+            if (types.has("mouseover") || types.has("pointerover")) {
+                score += 4;
+            }
+            if (types.has("mouseenter") || types.has("pointerenter")) {
+                score += 3;
+            }
+            if (types.has("mousemove") || types.has("pointermove")) {
+                score += 1;
+            }
+
+            if (elem.matches(interactiveSelector)) {
+                score += 6;
+            }
+
+            if (["DIV", "LI", "ARTICLE", "TR", "TD"].includes(elem.tagName)) {
+                score += 2;
+            }
+
+            if (elem.innerText && elem.innerText.trim()) {
+                score += 1;
+            }
+
+            if (isDecorative(elem)) {
+                score -= 4;
+            }
+
+            if (rect.width < 20 || rect.height < 20) {
+                score -= 2;
+            }
+
+            if (area > viewportArea * 0.5) {
+                score -= 4;
+            }
+            if (area > viewportArea * 0.8) {
+                score -= 8;
+            }
+
+            return score;
+        }
+
+        for (const candidate of candidates) {
+            candidate.score = candidateScore(candidate);
+        }
+
+        const dropSet = new Set();
+        for (const candidate of candidates) {
+            let parent = candidate.elem.parentElement;
+            while (parent) {
+                const ancestor = candidateMap.get(parent);
+                if (ancestor) {
+                    if (isNearDuplicateRect(candidate.rect, ancestor.rect)) {
+                        if (ancestor.score > candidate.score) {
+                            dropSet.add(candidate.elem);
+                        } else if (candidate.score > ancestor.score) {
+                            dropSet.add(ancestor.elem);
+                        } else if (rectArea(ancestor.rect) >= rectArea(candidate.rect)) {
+                            dropSet.add(candidate.elem);
+                        } else {
+                            dropSet.add(ancestor.elem);
+                        }
+                    }
+                    break;
+                }
+                parent = parent.parentElement;
+            }
+        }
+
+        for (const candidate of candidates) {
+            if (!dropSet.has(candidate.elem)) {
+                result.push([candidate.elem, candidate.frame]);
+            }
+        }
+
+        return result;
+    }
+
     // Find elements that are scrollable (have overflow content and scroll/auto overflow)
     // Returns an array of [element, frame] pairs
     function find_scrollable_elements(containers) {
@@ -499,9 +676,18 @@ window._qutebrowser.webelem = (function() {
         }
 
         // If :qb-hover was specified, also find elements with CSS :hover rules
+        // and elements pre-marked as JS hover targets in the main world.
         if (includeCssHover) {
             const hoverElems = find_elements_with_css_hover(containers);
             for (const [elem, frame] of hoverElems) {
+                if (!elemSet.has(elem)) {
+                    elems.push([elem, frame]);
+                    elemSet.add(elem);
+                }
+            }
+
+            const jsHoverElems = find_elements_with_js_hover(containers);
+            for (const [elem, frame] of jsHoverElems) {
                 if (!elemSet.has(elem)) {
                     elems.push([elem, frame]);
                     elemSet.add(elem);

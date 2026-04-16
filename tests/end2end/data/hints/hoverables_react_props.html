@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>hoverables react props</title>
+  <style>
+    #react-like {
+      width: 220px;
+      height: 80px;
+      margin: 40px;
+      padding: 12px;
+      background: #cfe8ff;
+      border: 1px solid #2d5a88;
+    }
+  </style>
+</head>
+<body>
+  <div id="react-like">hover target via react-style props</div>
+  <script>
+    const target = document.getElementById('react-like');
+    target['__reactProps$test'] = {
+      onMouseEnter() {},
+      onMouseLeave() {},
+    };
+  </script>
+</body>
+</html>
