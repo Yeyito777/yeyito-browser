@@ -65,7 +65,7 @@ try:
         entry_points={'gui_scripts':
                       ['qutebrowser = qutebrowser.qutebrowser:main']},
         zip_safe=True,
-        install_requires=['jinja2', 'PyYAML'],
+        install_requires=['jinja2', 'PyYAML', 'websockets>=10,<17'],
         python_requires='>=3.9',
         name='qutebrowser',
         version=_get_constant('version'),

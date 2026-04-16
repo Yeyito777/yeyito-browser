@@ -2046,7 +2046,7 @@ class CommandDispatcher:
 
     @cmdutils.register(instance='command-dispatcher', scope='window')
     def network_detail(self, tab_id: int, request_id: str):
-        """Get full headers, cookies, and timing for a network request.
+        """Get full request/response data for a network request.
 
         Args:
             tab_id: The tab ID to query.

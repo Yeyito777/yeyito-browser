@@ -13,6 +13,7 @@ from qutebrowser.qt.core import QObject, QTimer
 from qutebrowser.qt import sip
 
 from qutebrowser.utils import standarddir, usertypes, message
+from qutebrowser.misc import remotedebugging
 
 
 class TabRuntimeManager(QObject):
@@ -32,6 +33,7 @@ class TabRuntimeManager(QObject):
         # Wipe and recreate (handles crash leftovers)
         shutil.rmtree(self._tabs_dir, ignore_errors=True)
         self._ensure_tabs_dir()
+        self._write_remote_debugging_info()
 
         tabbed_browser.new_tab.connect(self._on_new_tab)
         tabbed_browser.shutting_down.connect(self._on_shutdown)
@@ -45,6 +47,62 @@ class TabRuntimeManager(QObject):
         tab_dir = self._tabs_dir / tab_id
         tab_dir.mkdir(parents=True, exist_ok=True)
         return tab_dir
+
+    def _write_remote_debugging_info(self):
+        info_path = Path(standarddir.runtime()) / 'remote-debugging.info'
+        address = remotedebugging.current_remote_debugging_address()
+        info = {
+            'enabled': bool(address),
+            'source': 'qutebrowser-auto',
+        }
+        if address is not None:
+            host, port = address
+            info['host'] = host
+            info['port'] = port
+        try:
+            info_path.write_text(json.dumps(info, indent=2) + '\n')
+        except OSError:
+            pass
+
+    @staticmethod
+    def _network_monitor():
+        try:
+            from qutebrowser.browser.webengine import devtoolsnetwork
+        except ImportError:
+            return None
+        monitor = devtoolsnetwork.instance()
+        if not monitor.is_available():
+            return None
+        return monitor
+
+    def _ensure_network_capture(self, tab, tab_id):
+        if tab_id not in self._tab_data:
+            return
+
+        monitor = self._network_monitor()
+        if monitor is None:
+            return
+
+        widget = getattr(tab, '_widget', None)
+        if widget is None or sip.isdeleted(widget):
+            return
+
+        page_getter = getattr(widget, 'page', None)
+        if page_getter is None:
+            return
+
+        page = page_getter()
+        if page is None or sip.isdeleted(page) or not hasattr(page, 'devToolsId'):
+            return
+
+        devtools_id = page.devToolsId()
+        if not devtools_id:
+            QTimer.singleShot(
+                250,
+                lambda t=tab, tid=tab_id: self._ensure_network_capture(t, tid))
+            return
+
+        monitor.register_tab(tab_id, devtools_id, self._ensure_tab_dir(tab_id))
 
     def _on_new_tab(self, tab, idx):
         tab_id = str(tab.tab_id)
@@ -62,6 +120,7 @@ class TabRuntimeManager(QObject):
         }
         self._ensure_tab_dir(tab_id)
         self._write_tab(tab_id)
+        self._ensure_network_capture(tab, tab_id)
 
         # Per-tab signal connections
         tab.url_changed.connect(
@@ -84,11 +143,15 @@ class TabRuntimeManager(QObject):
                 tid, 'audio', self._audio_state(t)))
         tab.shutting_down.connect(
             lambda tid=tab_id: self._on_tab_removed(tid))
+        tab.shutting_down.connect(
+            lambda tid=tab_id: self._disable_network_capture(tid))
         tab.console_message.connect(
             lambda level, source, line, msg, tid=tab_id:
                 self._append_console_log(tid, level, source, line, msg))
         tab.load_started.connect(
             lambda tid=tab_id: self._truncate_console_log(tid))
+        tab.load_started.connect(
+            lambda tid=tab_id: self._reset_network_capture(tid))
 
         # Auto-resume YouTube playback after session restore.
         # The greasemonkey script emits console.log('[yt-resume-ready]') when
@@ -99,6 +162,16 @@ class TabRuntimeManager(QObject):
                 self._on_youtube_resume_signal(t, msg))
 
         self._update_indices()
+
+    def _disable_network_capture(self, tab_id):
+        monitor = self._network_monitor()
+        if monitor is not None:
+            monitor.unregister_tab(tab_id)
+
+    def _reset_network_capture(self, tab_id):
+        monitor = self._network_monitor()
+        if monitor is not None:
+            monitor.reset_live_buffer(tab_id)
 
     def _on_tab_removed(self, tab_id):
         self._tab_data.pop(tab_id, None)
@@ -393,6 +466,16 @@ class TabRuntimeManager(QObject):
             return False
         result_path = self._ensure_tab_dir(tab_id_str) / 'network.json'
 
+        monitor = self._network_monitor()
+        if monitor is not None:
+            data = monitor.query_list(tab_id_str)
+            if data is not None:
+                try:
+                    result_path.write_text(json.dumps(data, indent=2) + '\n')
+                except FileNotFoundError:
+                    pass
+                return True
+
         def _on_result(data):
             try:
                 result_path.write_text(
@@ -404,17 +487,22 @@ class TabRuntimeManager(QObject):
         return True
 
     def network_detail(self, tab_id_str, request_id):
-        """Get detail + response body/headers for a network request.
-
-        Chains: C++ detail → JS fetch (via console.log callback) → write file.
-        Uses console.log with a sentinel prefix because QtWebEngine's
-        runJavaScript callback doesn't resolve Promises.
-        """
+        """Get full detail for a captured network request."""
         tab = self._find_tab(tab_id_str)
         if tab is None:
             return False
         result_path = self._ensure_tab_dir(tab_id_str) / f'request-{request_id}.json'
-        sentinel = f'__qb_nr_{request_id}'
+
+        monitor = self._network_monitor()
+        if monitor is not None:
+            detail = monitor.query_detail(tab_id_str, request_id)
+            if detail is not None:
+                try:
+                    result_path.write_text(json.dumps(detail, indent=2) + '\n')
+                except FileNotFoundError:
+                    pass
+                if 'error' not in detail:
+                    return True
 
         def _write(obj):
             try:
@@ -431,47 +519,7 @@ class TabRuntimeManager(QObject):
             except json.JSONDecodeError:
                 _write({'error': 'invalid response'})
                 return
-            if 'error' in detail:
-                _write(detail)
-                return
-
-            url = detail.get('url', '')
-            if not url:
-                _write(detail)
-                return
-
-            # Listen for the fetch result via console.log sentinel
-            def _on_console(level, source, line, msg):
-                if not msg.startswith(sentinel):
-                    return
-                try:
-                    tab.console_message.disconnect(_on_console)
-                except TypeError:
-                    pass
-                payload = msg[len(sentinel):]
-                if payload:
-                    try:
-                        detail.update(json.loads(payload))
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                _write(detail)
-
-            tab.console_message.connect(_on_console)
-
-            # Re-fetch from HTTP cache to get body + response headers
-            url_json = json.dumps(url)
-            sentinel_json = json.dumps(sentinel)
-            fetch_js = (
-                f'fetch({url_json}, {{cache: "force-cache"}})'
-                '.then(async function(r) {'
-                '  var h = {};'
-                '  r.headers.forEach(function(v, k) { h[k] = v; });'
-                f'  console.log({sentinel_json} + JSON.stringify({{responseHeaders: h, body: await r.text()}}));'
-                '}).catch(function(e) {'
-                f'  console.log({sentinel_json} + JSON.stringify({{bodyError: e.message}}));'
-                '})'
-            )
-            tab.run_js_async(fetch_js, world=usertypes.JsWorld.main)
+            _write(detail)
 
         tab.network_query('detail', {'request_id': request_id}, _on_detail)
         return True
@@ -482,6 +530,21 @@ class TabRuntimeManager(QObject):
         if tab is None:
             return False
         body_path = self._ensure_tab_dir(tab_id_str) / 'network-body'
+
+        monitor = self._network_monitor()
+        if monitor is not None:
+            result = monitor.query_body(tab_id_str, request_id)
+            if result is not None:
+                data, error_text = result
+                try:
+                    if data is not None:
+                        body_path.write_bytes(data)
+                    else:
+                        body_path.write_text(error_text or '')
+                except FileNotFoundError:
+                    pass
+                if data is not None:
+                    return True
 
         def _on_result(data):
             try:
@@ -574,5 +637,9 @@ class TabRuntimeManager(QObject):
         return True
 
     def _on_shutdown(self):
+        monitor = self._network_monitor()
+        if monitor is not None:
+            for tab_id in list(self._tab_data):
+                monitor.unregister_tab(tab_id)
         self._tab_data.clear()
         shutil.rmtree(self._tabs_dir, ignore_errors=True)

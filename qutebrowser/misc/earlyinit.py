@@ -375,6 +375,13 @@ def early_init(args):
     configure_pyqt()
     check_ssl_support()
     check_optimize_flag()
+
+    # The internal network capture bridge uses the Chromium DevTools protocol.
+    # Remote debugging must be enabled before QtWebEngine initializes.
+    from qutebrowser.misc import remotedebugging
+    remotedebugging.ensure_remote_debugging_env(
+        basedir=getattr(args, 'basedir', None))
+
     startup_checkpoint("webengine_early_import() — import QtWebEngine before QApp")
     webengine_early_import()
     startup_checkpoint("early_init() done")
