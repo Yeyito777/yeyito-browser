@@ -8,7 +8,7 @@ import itertools
 import operator
 
 import pytest
-from qutebrowser.qt.core import QUrl
+from qutebrowser.qt.core import QUrl, QRect, Qt
 
 from qutebrowser.utils import usertypes
 import qutebrowser.browser.hints
@@ -27,6 +27,37 @@ def tabbed_browser(tabbed_browser_stubs, web_tab):
     tb.widget.cur_url = QUrl('https://www.example.com/')
     web_tab.container.expose()  # No elements found if we don't do this.
     return tb
+
+
+def test_hint_label_is_mouse_transparent(fake_web_tab, qtbot):
+    tab = fake_web_tab()
+    qtbot.add_widget(tab)
+
+    class Elem:
+
+        def has_frame(self):
+            return True
+
+        def rect_on_view(self, *, no_js=False):
+            return QRect(0, 0, 10, 10)
+
+    context = qutebrowser.browser.hints.HintContext(
+        tab=tab,
+        target=qutebrowser.browser.hints.Target.normal,
+        rapid=False,
+        hint_mode='letter',
+        add_history=False,
+        first=False,
+        baseurl=QUrl('https://www.example.com/'),
+        args=[],
+        group='all',
+    )
+
+    label = qutebrowser.browser.hints.HintLabel(
+        Elem(), context, show=False, connect_signals=False, position=False)
+    qtbot.add_widget(label)
+
+    assert label.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
 
 def test_show_benchmark(benchmark, tabbed_browser, qtbot, mode_manager):

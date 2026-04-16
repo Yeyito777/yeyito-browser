@@ -110,6 +110,11 @@ class HintLabel(QLabel):
         # get any extra text indent from Qt.
         # The real stylesheet lives in mainwindow.py for performance reasons..
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # Hint labels are overlays and must not steal hover from the underlying
+        # page content. Sites like Discord reveal actions on CSS hover, and
+        # showing a hint label under the cursor would otherwise trigger a leave
+        # on the web view and hide those actions again.
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setIndent(0)
 
         if connect_signals:
