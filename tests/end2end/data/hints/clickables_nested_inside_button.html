@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>clickables nested inside button</title>
+  <style>
+    #standalone {
+      margin-top: 20px;
+      padding: 8px;
+      border: 1px solid #444;
+      display: inline-block;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <button id="outer-button">
+    <span id="inner-click">inner click handler</span>
+  </button>
+  <div id="standalone">standalone click handler</div>
+  <script>
+    document.getElementById('inner-click').addEventListener('click', () => {});
+    document.getElementById('standalone').addEventListener('click', () => {});
+  </script>
+</body>
+</html>

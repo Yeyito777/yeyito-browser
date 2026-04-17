@@ -155,7 +155,7 @@ The `hints.selectors` config option defines which elements to hint for each grou
 
 | Group | Purpose | Key Selectors |
 |-------|---------|---------------|
-| `all` | All clickable elements | `a`, `button`, `[onclick]`, `[role="button"]`, `[tabindex]`, etc. |
+| `all` | All clickable elements | `a`, `button`, `[onclick]`, `[role="button"]`, `[tabindex]`, `:qb-click`, etc. |
 | `links` | Hyperlinks only | `a[href]`, `area[href]`, `link[href]` |
 | `images` | Images | `img` |
 | `media` | Media elements | `audio`, `video`, `img` |
@@ -163,6 +163,14 @@ The `hints.selectors` config option defines which elements to hint for each grou
 | `inputs` | Form inputs | `input[type="text"]`, `textarea`, etc. |
 | `hoverables` | Elements with hover behavior | Attribute selectors + `:qb-hover` magic marker |
 | `scrollables` | Scrollable containers | `:qb-scrollable` magic marker |
+
+### The `:qb-click` Magic Marker
+
+When `:qb-click` appears in a selector:
+1. It's stripped from the selector before CSS querying.
+2. Main-world click tracking is triggered.
+3. Elements marked via JS listeners or framework props are merged into results.
+4. Normal element serialization is preserved for standard hinting.
 
 ### The `hoverables` Selector Group
 

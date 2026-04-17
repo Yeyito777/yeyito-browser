@@ -947,29 +947,43 @@ class WebEngineElements(browsertab.AbstractElements):
         self._tab.run_js_async(js_code, js_cb)
 
     def find_css(self, selector, callback, error_cb, *, only_visible=False):
-        if ':qb-hover' not in selector:
+        trackers = []
+        if ':qb-click' in selector:
+            trackers.append(('clicktrack', 'click'))
+        if ':qb-hover' in selector:
+            trackers.append(('hovertrack', 'hover'))
+
+        if not trackers:
             self._find_css(selector, callback, error_cb, only_visible=only_visible)
             return
 
-        js_code = javascript.assemble_guarded('hovertrack', 'mark_frames')
+        def run_tracker(index):
+            if index >= len(trackers):
+                self._find_css(selector, callback, error_cb, only_visible=only_visible)
+                return
 
-        def on_result(js_result):
-            missing = self._tab._scripts.helper_missing_from_result(js_result)
-            if missing is not None:
-                log.webview.debug(
-                    'Main-world hovertrack helper missing, falling back to CSS-only '
-                    f'hover detection: {missing}'
-                )
-            else:
-                exception = self._tab._scripts.helper_exception_from_result(js_result)
-                if exception is not None:
-                    log.webview.warning(
-                        'Main-world hovertrack helper threw while preparing hover '
-                        f'hints: {exception}'
+            helper, label = trackers[index]
+            js_code = javascript.assemble_guarded(helper, 'mark_frames')
+
+            def on_result(js_result):
+                missing = self._tab._scripts.helper_missing_from_result(js_result)
+                if missing is not None:
+                    log.webview.debug(
+                        f'Main-world {helper} helper missing while preparing '
+                        f'{label} hints: {missing}'
                     )
-            self._find_css(selector, callback, error_cb, only_visible=only_visible)
+                else:
+                    exception = self._tab._scripts.helper_exception_from_result(js_result)
+                    if exception is not None:
+                        log.webview.warning(
+                            f'Main-world {helper} helper threw while preparing '
+                            f'{label} hints: {exception}'
+                        )
+                run_tracker(index + 1)
 
-        self._tab.run_js_async(js_code, on_result, world=usertypes.JsWorld.main)
+            self._tab.run_js_async(js_code, on_result, world=usertypes.JsWorld.main)
+
+        run_tracker(0)
 
     def _find_id(self, elem_id, callback, *, retry=True):
         js_code = javascript.assemble_guarded('webelem', 'find_id', elem_id)
@@ -1458,10 +1472,21 @@ class _WebEngineScripts(QObject):
             resources.read_file('javascript/hovertrack.js'),
             expected_helpers=['hovertrack'],
         )
+        clicktrack_js = javascript.wrap_global(
+            'clicktrack',
+            resources.read_file('javascript/clicktrack.js'),
+            expected_helpers=['clicktrack'],
+        )
         # FIXME:qtwebengine what about subframes=True?
         self._inject_js('js', js_code, subframes=True)
         self._inject_js(
             'hovertrack', hovertrack_js,
+            world=QWebEngineScript.ScriptWorldId.MainWorld,
+            injection_point=QWebEngineScript.InjectionPoint.DocumentCreation,
+            subframes=True,
+        )
+        self._inject_js(
+            'clicktrack', clicktrack_js,
             world=QWebEngineScript.ScriptWorldId.MainWorld,
             injection_point=QWebEngineScript.InjectionPoint.DocumentCreation,
             subframes=True,

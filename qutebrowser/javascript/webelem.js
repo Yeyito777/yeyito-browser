@@ -532,6 +532,257 @@ window._qutebrowser.webelem = (function() {
         return result;
     }
 
+    const CLICKABLE_ROLE_SELECTOR = [
+        '[role="link"]', '[role="option"]', '[role="button"]',
+        '[role="tab"]', '[role="checkbox"]', '[role="switch"]',
+        '[role="menuitem"]', '[role="menuitemcheckbox"]',
+        '[role="menuitemradio"]', '[role="treeitem"]',
+    ].join(', ');
+
+    function rect_area(rect) {
+        return Math.max(0, rect.width) * Math.max(0, rect.height);
+    }
+
+    function overlap_ratio(a, b) {
+        const left = Math.max(a.left, b.left);
+        const right = Math.min(a.right, b.right);
+        const top = Math.max(a.top, b.top);
+        const bottom = Math.min(a.bottom, b.bottom);
+        const width = Math.max(0, right - left);
+        const height = Math.max(0, bottom - top);
+        const intersection = width * height;
+        const minArea = Math.min(rect_area(a), rect_area(b));
+        if (minArea === 0) {
+            return 0;
+        }
+        return intersection / minArea;
+    }
+
+    function area_ratio(a, b) {
+        const areaA = rect_area(a);
+        const areaB = rect_area(b);
+        const minArea = Math.max(1, Math.min(areaA, areaB));
+        const maxArea = Math.max(areaA, areaB);
+        return maxArea / minArea;
+    }
+
+    function is_near_duplicate_rect(a, b) {
+        return (
+            overlap_ratio(a, b) >= 0.9 &&
+            area_ratio(a, b) <= 1.35 &&
+            Math.abs(a.left - b.left) <= 20 &&
+            Math.abs(a.top - b.top) <= 20 &&
+            Math.abs(a.width - b.width) <= 40 &&
+            Math.abs(a.height - b.height) <= 40
+        );
+    }
+
+    function is_generic_tabindex_clickable(elem) {
+        return (
+            elem.matches('[tabindex]:not([tabindex="-1"])') &&
+            !elem.matches(CLICKABLE_ROLE_SELECTOR) &&
+            !['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY'].includes(elem.tagName) &&
+            !elem.matches('[contenteditable]:not([contenteditable="false"])') &&
+            !elem.matches('[aria-haspopup]')
+        );
+    }
+
+    function clickable_candidate_score(elem, rect = null) {
+        const win = elem.ownerDocument.defaultView || window;
+        const viewportArea = Math.max(1, win.innerWidth * win.innerHeight);
+        const effectiveRect = rect || elem.getBoundingClientRect();
+        let score = 0;
+
+        if (['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY'].includes(elem.tagName)) {
+            score += 12;
+        }
+        if (elem.tagName === 'A' && elem.href) {
+            score += 4;
+        }
+        if (elem.matches(CLICKABLE_ROLE_SELECTOR)) {
+            score += 8;
+        }
+        if (elem.matches('[contenteditable]:not([contenteditable="false"])')) {
+            score += 6;
+        }
+        if (elem.matches('[aria-haspopup]')) {
+            score += 5;
+        }
+        if (elem.matches('[onclick], [onmousedown]')) {
+            score += 5;
+        }
+        if (elem.matches('[tabindex]:not([tabindex="-1"])')) {
+            score += 1;
+        }
+        if (is_generic_tabindex_clickable(elem)) {
+            score -= 10;
+        }
+        if (['IMG', 'SVG', 'G', 'PATH', 'USE'].includes(elem.tagName)) {
+            score -= 8;
+        }
+        if ((elem.innerText && elem.innerText.trim()) || elem.getAttribute('aria-label') || elem.getAttribute('title')) {
+            score += 2;
+        }
+        if (rect_area(effectiveRect) > viewportArea * 0.5) {
+            score -= 10;
+        }
+        if (rect_area(effectiveRect) > viewportArea * 0.8) {
+            score -= 10;
+        }
+
+        return score;
+    }
+
+    function prune_duplicate_selector_matches(candidates) {
+        const DUPLICATE_THRESHOLD = 200;
+        if (candidates.length <= DUPLICATE_THRESHOLD) {
+            return candidates;
+        }
+
+        const candidateMap = new Map();
+        const scoredCandidates = [];
+        for (const [elem, frame] of candidates) {
+            const rect = elem.getBoundingClientRect();
+            const candidate = {
+                elem,
+                frame,
+                rect,
+                score: clickable_candidate_score(elem, rect),
+            };
+            scoredCandidates.push(candidate);
+            candidateMap.set(elem, candidate);
+        }
+
+        const dropSet = new Set();
+        for (const candidate of scoredCandidates) {
+            let parent = candidate.elem.parentElement;
+            while (parent) {
+                const ancestor = candidateMap.get(parent);
+                if (ancestor && ancestor.frame === candidate.frame &&
+                        overlap_ratio(candidate.rect, ancestor.rect) >= 0.9) {
+                    if (ancestor.score > candidate.score) {
+                        dropSet.add(candidate.elem);
+                    } else if (candidate.score > ancestor.score) {
+                        dropSet.add(ancestor.elem);
+                    } else if (rect_area(ancestor.rect) >= rect_area(candidate.rect)) {
+                        dropSet.add(ancestor.elem);
+                    } else {
+                        dropSet.add(candidate.elem);
+                    }
+                }
+                parent = parent.parentElement;
+            }
+        }
+
+        for (let i = 0; i < scoredCandidates.length; i++) {
+            const left = scoredCandidates[i];
+            if (dropSet.has(left.elem)) {
+                continue;
+            }
+            for (let j = i + 1; j < scoredCandidates.length; j++) {
+                const right = scoredCandidates[j];
+                if (dropSet.has(right.elem) || left.frame !== right.frame) {
+                    continue;
+                }
+                if (!is_near_duplicate_rect(left.rect, right.rect)) {
+                    continue;
+                }
+                if (left.score > right.score) {
+                    dropSet.add(right.elem);
+                } else if (right.score > left.score) {
+                    dropSet.add(left.elem);
+                    break;
+                } else if (rect_area(left.rect) >= rect_area(right.rect)) {
+                    dropSet.add(left.elem);
+                    break;
+                } else {
+                    dropSet.add(right.elem);
+                }
+            }
+        }
+
+        const result = [];
+        for (const candidate of scoredCandidates) {
+            if (!dropSet.has(candidate.elem)) {
+                result.push([candidate.elem, candidate.frame]);
+            }
+        }
+        return result;
+    }
+
+    function has_click_metadata(elem) {
+        return Boolean(
+            (elem.innerText && elem.innerText.trim()) ||
+            elem.getAttribute("role") ||
+            elem.getAttribute("aria-label") ||
+            elem.getAttribute("title")
+        );
+    }
+
+    function has_matching_ancestor(elem, selector) {
+        if (!selector) {
+            return false;
+        }
+
+        let parent = elem.parentElement;
+        while (parent) {
+            try {
+                if (parent.matches(selector)) {
+                    return true;
+                }
+            } catch (_error) {
+                return false;
+            }
+            parent = parent.parentElement;
+        }
+        return false;
+    }
+
+    // Find elements pre-marked in the main world as having JS-driven click behavior.
+    // Returns an array of [element, frame] pairs.
+    function find_elements_with_js_click(containers, baseSelector = "") {
+        const result = [];
+        const selector = "[data-qutebrowser-clicktrack]";
+        const elemSet = new Set();
+        const candidates = [];
+        const COMPLEX_PAGE_THRESHOLD = 200;
+
+        for (const [container, frame] of containers) {
+            for (const elem of container.querySelectorAll(selector)) {
+                if (!elemSet.has(elem)) {
+                    elemSet.add(elem);
+                    candidates.push([elem, frame]);
+                }
+            }
+        }
+
+        const isComplexPage = candidates.length > COMPLEX_PAGE_THRESHOLD;
+
+        for (const [elem, frame] of candidates) {
+            // If a normal hint selector already matched an ancestor, adding a
+            // clicktrack hint here is almost always redundant noise.
+            if (has_matching_ancestor(elem, baseSelector)) {
+                continue;
+            }
+
+            if (isComplexPage) {
+                const win = elem.ownerDocument.defaultView || window;
+                const viewportArea = Math.max(1, win.innerWidth * win.innerHeight);
+                const rect = elem.getBoundingClientRect();
+                if (rect_area(rect) > viewportArea * 0.5) {
+                    continue;
+                }
+                if (!has_click_metadata(elem)) {
+                    continue;
+                }
+            }
+
+            result.push([elem, frame]);
+        }
+
+        return result;
+    }
+
     // Find elements that are scrollable (have overflow content and scroll/auto overflow)
     // Returns an array of [element, frame] pairs
     function find_scrollable_elements(containers) {
@@ -628,17 +879,19 @@ window._qutebrowser.webelem = (function() {
     }
 
     funcs.find_css = (selector, only_visible) => {
+        // Check for special :qb-click marker to include JS-clickable elements
+        const includeJsClick = selector.includes(":qb-click");
         // Check for special :qb-hover marker to include CSS hover elements
         const includeCssHover = selector.includes(":qb-hover");
         // Check for special :qb-scrollable marker to include scrollable elements
         const includeScrollable = selector.includes(":qb-scrollable");
 
         // Remove magic markers from the selector
-        if (includeCssHover || includeScrollable) {
+        if (includeJsClick || includeCssHover || includeScrollable) {
             selector = selector
                 .split(",")
                 .map((s) => s.trim())
-                .filter((s) => s !== ":qb-hover" && s !== ":qb-scrollable")
+                .filter((s) => ![":qb-click", ":qb-hover", ":qb-scrollable"].includes(s))
                 .join(", ");
         }
 
@@ -656,10 +909,10 @@ window._qutebrowser.webelem = (function() {
         }
 
         // Find elements in all containers
-        const elems = [];
+        let elems = [];
         const elemSet = new Set();  // Track elements to avoid duplicates
 
-        // Only query with selector if there's something left after removing :qb-hover
+        // Only query with selector if there's something left after removing magic markers
         if (selector) {
             for (const [container, frame] of containers) {
                 try {
@@ -671,6 +924,23 @@ window._qutebrowser.webelem = (function() {
                     }
                 } catch (ex) {
                     return {"success": false, "error": ex.toString()};
+                }
+            }
+            elems = prune_duplicate_selector_matches(elems);
+            elemSet.clear();
+            for (const [elem] of elems) {
+                elemSet.add(elem);
+            }
+        }
+
+        // If :qb-click was specified, also find elements pre-marked as
+        // JS click targets in the main world.
+        if (includeJsClick) {
+            const jsClickElems = find_elements_with_js_click(containers, selector);
+            for (const [elem, frame] of jsClickElems) {
+                if (!elemSet.has(elem)) {
+                    elems.push([elem, frame]);
+                    elemSet.add(elem);
                 }
             }
         }

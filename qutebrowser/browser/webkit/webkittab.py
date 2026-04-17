@@ -729,6 +729,10 @@ class WebKitElements(browsertab.AbstractElements):
 
     def find_css(self, selector, callback, error_cb, *, only_visible=False):
         utils.unused(error_cb)
+        for marker in [':qb-click', ':qb-hover', ':qb-scrollable']:
+            selector = selector.replace(marker, '')
+        selector = ','.join(part.strip() for part in selector.split(',') if part.strip())
+
         mainframe = self._widget.page().mainFrame()
         if mainframe is None:
             raise browsertab.WebTabError("No frame focused!")
