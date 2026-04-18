@@ -581,9 +581,10 @@ window._qutebrowser.webelem = (function() {
         return (
             elem.matches('[tabindex]:not([tabindex="-1"])') &&
             !elem.matches(CLICKABLE_ROLE_SELECTOR) &&
-            !['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY'].includes(elem.tagName) &&
+            !['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY', 'ARTICLE'].includes(elem.tagName) &&
             !elem.matches('[contenteditable]:not([contenteditable="false"])') &&
-            !elem.matches('[aria-haspopup]')
+            !elem.matches('[aria-haspopup]') &&
+            elem.getAttribute('role') !== 'article'
         );
     }
 
@@ -654,12 +655,28 @@ window._qutebrowser.webelem = (function() {
         }
 
         const dropSet = new Set();
+
+        // Generic tabindex containers (like Discord/X list wrappers) are often
+        // shadowed by more specific clickable descendants. Drop the container,
+        // but keep semantic/article-like tabindex targets.
         for (const candidate of scoredCandidates) {
             let parent = candidate.elem.parentElement;
             while (parent) {
                 const ancestor = candidateMap.get(parent);
                 if (ancestor && ancestor.frame === candidate.frame &&
-                        overlap_ratio(candidate.rect, ancestor.rect) >= 0.9) {
+                        is_generic_tabindex_clickable(ancestor.elem)) {
+                    dropSet.add(ancestor.elem);
+                }
+                parent = parent.parentElement;
+            }
+        }
+
+        for (const candidate of scoredCandidates) {
+            let parent = candidate.elem.parentElement;
+            while (parent) {
+                const ancestor = candidateMap.get(parent);
+                if (ancestor && ancestor.frame === candidate.frame &&
+                        is_near_duplicate_rect(candidate.rect, ancestor.rect)) {
                     if (ancestor.score > candidate.score) {
                         dropSet.add(candidate.elem);
                     } else if (candidate.score > ancestor.score) {

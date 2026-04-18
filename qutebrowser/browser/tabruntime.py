@@ -36,6 +36,7 @@ class TabRuntimeManager(QObject):
         self._write_remote_debugging_info()
 
         tabbed_browser.new_tab.connect(self._on_new_tab)
+        tabbed_browser.widget.tab_index_changed.connect(self._on_current_changed)
         tabbed_browser.shutting_down.connect(self._on_shutdown)
         tabbed_browser.widget.tab_bar().tabMoved.connect(self._update_indices)
 
@@ -47,6 +48,30 @@ class TabRuntimeManager(QObject):
         tab_dir = self._tabs_dir / tab_id
         tab_dir.mkdir(parents=True, exist_ok=True)
         return tab_dir
+
+    def _active_tab_path(self):
+        return self._tabs_dir / 'active'
+
+    def _current_tab_id(self):
+        tab = self._tabbed_browser.widget.currentWidget()
+        if tab is None:
+            return None
+        return str(tab.tab_id)
+
+    def _write_active_tab(self, tab_id):
+        active_path = self._active_tab_path()
+        if tab_id is None:
+            try:
+                active_path.unlink()
+            except FileNotFoundError:
+                pass
+            return
+
+        self._ensure_tabs_dir()
+        try:
+            active_path.write_text(f'{tab_id}\n')
+        except OSError:
+            pass
 
     def _write_remote_debugging_info(self):
         info_path = Path(standarddir.runtime()) / 'remote-debugging.info'
@@ -162,6 +187,13 @@ class TabRuntimeManager(QObject):
                 self._on_youtube_resume_signal(t, msg))
 
         self._update_indices()
+        self._write_active_tab(self._current_tab_id())
+
+    def _on_current_changed(self, idx, _count):
+        if idx < 0:
+            self._write_active_tab(None)
+            return
+        self._write_active_tab(self._current_tab_id())
 
     def _disable_network_capture(self, tab_id):
         monitor = self._network_monitor()
@@ -177,6 +209,7 @@ class TabRuntimeManager(QObject):
         self._tab_data.pop(tab_id, None)
         shutil.rmtree(self._tabs_dir / tab_id, ignore_errors=True)
         self._update_indices()
+        self._write_active_tab(self._current_tab_id())
 
     def _update_indices(self):
         tab_ids = []
@@ -357,6 +390,25 @@ class TabRuntimeManager(QObject):
             if str(t.tab_id) == tab_id_str:
                 return t
         return None
+
+    def focus_tab(self, tab_id_str):
+        """Focus a tab by its runtime tab ID.
+
+        Returns True if the tab was found and focused, False otherwise.
+        """
+        if tab_id_str not in self._tab_data:
+            return False
+
+        tab = self._find_tab(tab_id_str)
+        if tab is None:
+            return False
+
+        idx = self._tabbed_browser.widget.indexOf(tab)
+        if idx < 0:
+            return False
+
+        self._tabbed_browser.widget.setCurrentIndex(idx)
+        return True
 
     def close_tab(self, tab_id_str):
         """Close a tab by its runtime tab ID.
