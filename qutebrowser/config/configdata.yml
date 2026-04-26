@@ -3912,7 +3912,7 @@ bindings.default:
       <Ctrl-Shift-Tab>: nop
       <Ctrl-^>: tab-focus last
       <Ctrl-V>: mode-enter passthrough
-      <Ctrl-Q>: quit
+      <Ctrl-Q>: nop
       ZQ: quit
       ZZ: quit --save
       <Ctrl-F>: scroll-page 0 1
