@@ -19,7 +19,7 @@ from qutebrowser.qt.gui import QKeySequence, QKeyEvent
 from qutebrowser.browser import hints
 from qutebrowser.commands import cmdexc
 from qutebrowser.config import config
-from qutebrowser.keyinput import basekeyparser, keyutils, macros
+from qutebrowser.keyinput import basekeyparser, keyutils
 from qutebrowser.utils import usertypes, log, message, objreg, utils
 if TYPE_CHECKING:
     from qutebrowser.commands import runners
@@ -247,8 +247,7 @@ class RegisterKeyParser(CommandKeyParser):
     """KeyParser for modes that record a register key.
 
     Attributes:
-        _register_mode: One of KeyMode.set_mark, KeyMode.jump_mark,
-                        KeyMode.record_macro and KeyMode.run_macro.
+        _register_mode: One of KeyMode.set_mark or KeyMode.jump_mark.
     """
 
     def __init__(self, *, win_id: int,
@@ -289,10 +288,6 @@ class RegisterKeyParser(CommandKeyParser):
                 tabbed_browser.set_mark(key)
             elif self._register_mode == usertypes.KeyMode.jump_mark:
                 tabbed_browser.jump_mark(key)
-            elif self._register_mode == usertypes.KeyMode.record_macro:
-                macros.macro_recorder.record_macro(key)
-            elif self._register_mode == usertypes.KeyMode.run_macro:
-                macros.macro_recorder.run_macro(self._win_id, key)
             else:
                 raise ValueError("{} is not a valid register mode".format(
                     self._register_mode))

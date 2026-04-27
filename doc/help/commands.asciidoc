@@ -82,8 +82,6 @@ possible to run or bind multiple commands by separating them with `;;`.
 |<<insert-text,insert-text>>|Insert text at cursor position.
 |<<jseval,jseval>>|Evaluate a JavaScript string.
 |<<jump-mark,jump-mark>>|Jump to the mark named by `key`.
-|<<macro-record,macro-record>>|Start or stop recording a macro.
-|<<macro-run,macro-run>>|Run a recorded macro.
 |<<message-error,message-error>>|Show an error message in the statusbar.
 |<<message-info,message-info>>|Show an info message in the statusbar.
 |<<message-warning,message-warning>>|Show a warning message in the statusbar.
@@ -865,27 +863,6 @@ Jump to the mark named by `key`.
 
 ==== positional arguments
 * +'key'+: mark identifier; capital indicates a global mark
-
-[[macro-record]]
-=== macro-record
-Syntax: +:macro-record ['register']+
-
-Start or stop recording a macro.
-
-==== positional arguments
-* +'register'+: Which register to store the macro in.
-
-[[macro-run]]
-=== macro-run
-Syntax: +:macro-run ['register']+
-
-Run a recorded macro.
-
-==== positional arguments
-* +'register'+: Which macro to run.
-
-==== count
-How many times to run the macro.
 
 [[message-error]]
 === message-error

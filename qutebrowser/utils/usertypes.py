@@ -255,11 +255,8 @@ class KeyMode(enum.Enum):
     caret = enum.auto()  #: Caret mode (moving cursor with keys)
     set_mark = enum.auto()
     jump_mark = enum.auto()
-    record_macro = enum.auto()
-    run_macro = enum.auto()
     # 'register' is a bit of an oddball here: It's not really a "real" mode,
-    # but it's used in the config for common bindings for
-    # set_mark/jump_mark/record_macro/run_macro.
+    # but it's used in the config for common bindings for set_mark/jump_mark.
     register = enum.auto()
 
 

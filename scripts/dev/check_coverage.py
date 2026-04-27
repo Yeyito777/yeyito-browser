@@ -219,7 +219,6 @@ PERFECT_FILES = [
 WHITELISTED_FILES = [
     'qutebrowser/browser/webkit/webkitinspector.py',
     'qutebrowser/misc/debugcachestats.py',
-    'qutebrowser/keyinput/macros.py',
     'qutebrowser/browser/webkit/webkitelem.py',
     'qutebrowser/api/interceptor.py',
     'qutebrowser/extensions/interceptors.py',

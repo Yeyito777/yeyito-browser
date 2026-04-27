@@ -3944,8 +3944,6 @@ bindings.default:
       <Ctrl-p>: tab-pin
       <Alt-m>: tab-mute
       gD: tab-give
-      q: macro-record
-      "@": macro-run
       tsh: config-cycle -p -t -u *://{url:host}/* content.javascript.enabled
         ;; reload
       tSh: config-cycle -p -u *://{url:host}/* content.javascript.enabled

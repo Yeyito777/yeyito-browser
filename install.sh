@@ -96,6 +96,16 @@ python -m venv --system-site-packages "${venv_dir}" >/dev/null
 echo "[+] Upgrading pip/wheel"
 "${venv_python}" -m pip install --upgrade pip wheel >/dev/null
 
+# setuptools can otherwise reuse build/lib from a previous local build and
+# resurrect Python files that were deleted from the source tree.
+echo "[+] Cleaning stale Python package build/install artifacts"
+rm -rf "${repo_dir}/build/lib" "${repo_dir}/build/bdist."*
+venv_site_packages=$("${venv_python}" -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+rm -rf \
+    "${venv_site_packages}/~utebrowser" \
+    "${venv_site_packages}/~utebrowser-"*.dist-info
+"${venv_python}" -m pip uninstall -y qutebrowser >/dev/null 2>&1 || true
+
 echo "[+] Installing qutebrowser from ${repo_dir}"
 "${venv_python}" -m pip install --upgrade "${repo_dir}" >/dev/null
 

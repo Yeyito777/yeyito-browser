@@ -163,20 +163,6 @@ def init(win_id: int, parent: QObject) -> 'ModeManager':
                 win_id=win_id,
                 commandrunner=commandrunner,
                 parent=modeman),
-
-        usertypes.KeyMode.record_macro:
-            modeparsers.RegisterKeyParser(
-                mode=usertypes.KeyMode.record_macro,
-                win_id=win_id,
-                commandrunner=commandrunner,
-                parent=modeman),
-
-        usertypes.KeyMode.run_macro:
-            modeparsers.RegisterKeyParser(
-                mode=usertypes.KeyMode.run_macro,
-                win_id=win_id,
-                commandrunner=commandrunner,
-                parent=modeman),
     }
 
     for mode, parser in keyparsers.items():

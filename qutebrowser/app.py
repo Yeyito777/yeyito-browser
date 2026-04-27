@@ -53,7 +53,7 @@ from qutebrowser.browser.network import proxy
 from qutebrowser.browser.webkit import cookies, cache
 from qutebrowser.browser.webkit.network import networkmanager
 from qutebrowser.extensions import loader
-from qutebrowser.keyinput import macros, eventfilter
+from qutebrowser.keyinput import eventfilter
 from qutebrowser.mainwindow import mainwindow, prompt, windowundo
 from qutebrowser.misc import (ipc, savemanager, sessions, crashsignal,
                               earlyinit, sql, cmdhistory, backendproblem,
@@ -424,7 +424,6 @@ def _deferred_init(args):
     objreg.register('bookmark-manager', bookmark_manager)
 
     log.init.debug("Misc deferred initialization...")
-    macros.init()
     windowundo.init()
     nativeeventfilter.init()
 
@@ -717,8 +716,8 @@ def _init_modules(*, args):
     """Initialize all 'modules' which need to be initialized.
 
     Non-essential modules (proxy, quickmarks, bookmarks, cookies, cache,
-    greasemonkey, macros, etc.) are deferred to _deferred_init() which runs
-    after the window is shown.
+    greasemonkey, etc.) are deferred to _deferred_init() which runs after the
+    window is shown.
 
     Args:
         args: The argparse namespace.

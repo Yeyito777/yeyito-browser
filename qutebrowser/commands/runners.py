@@ -15,7 +15,7 @@ from qutebrowser.qt.core import pyqtSlot, QUrl, QObject
 from qutebrowser.api import cmdutils
 from qutebrowser.commands import cmdexc, parser
 from qutebrowser.utils import message, objreg, qtutils, usertypes, utils, urlutils
-from qutebrowser.keyinput import macros, modeman
+from qutebrowser.keyinput import modeman
 
 if TYPE_CHECKING:
     from qutebrowser.mainwindow import tabbedbrowser
@@ -154,7 +154,6 @@ class CommandRunner(AbstractCommandRunner):
             safely: Show CmdError exceptions as messages.
         """
         record_last_command = True
-        record_macro = True
 
         mode_manager = modeman.instance(self._win_id)
         cur_mode = mode_manager.mode
@@ -178,11 +177,5 @@ class CommandRunner(AbstractCommandRunner):
             if result.cmdline[0] in ['repeat-command', 'cmd-repeat-last']:
                 record_last_command = False
 
-            if result.cmdline[0] in ['macro-record', 'macro-run', 'set-cmd-text', 'cmd-set-text']:
-                record_macro = False
-
         if record_last_command:
             last_command[cur_mode] = (text, count)
-
-        if record_macro and cur_mode == usertypes.KeyMode.normal:
-            macros.macro_recorder.record_command(text, count)

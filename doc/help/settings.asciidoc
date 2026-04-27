@@ -624,7 +624,6 @@ Default:
 * +pass:[&lt;forward&gt;]+: +pass:[forward]+
 * +pass:[=]+: +pass:[zoom]+
 * +pass:[?]+: +pass:[cmd-set-text ?]+
-* +pass:[@]+: +pass:[macro-run]+
 * +pass:[B]+: +pass:[cmd-set-text -s :quickmark-load -t]+
 * +pass:[D]+: +pass:[tab-close -o]+
 * +pass:[F]+: +pass:[hint all tab]+
@@ -687,7 +686,6 @@ Default:
 * +pass:[o]+: +pass:[cmd-set-text -s :open]+
 * +pass:[pP]+: +pass:[open -- {primary}]+
 * +pass:[pp]+: +pass:[open -- {clipboard}]+
-* +pass:[q]+: +pass:[macro-record]+
 * +pass:[r]+: +pass:[reload]+
 * +pass:[sf]+: +pass:[save]+
 * +pass:[sk]+: +pass:[cmd-set-text -s :bind]+
