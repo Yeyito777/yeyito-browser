@@ -8,7 +8,7 @@ To implement the element shader (see `element-shader.md`), we need to modify Chr
 2. **Make our Blink modifications** directly in the tree
 3. **Build** and use environment variables to load our modified libraries, process binary, and resources
 
-**Key principle**: Keep `./install.sh` as the single entry point. First build takes hours, but subsequent builds are fast (seconds to minutes) thanks to incremental compilation.
+**Key principle**: Keep `make install` as the single entry point. First build takes hours, but subsequent builds are fast (seconds to minutes) thanks to incremental compilation.
 
 ## Current Setup
 
@@ -39,8 +39,9 @@ Qutebrowser/
 │           ├── resources/                 ← .pak resource files
 │           └── translations/
 │               └── qtwebengine_locales/   ← Locale .pak files
-├── install.sh                             # Single entry point
-└── .gitignore                             # Contains "build/"
+├── Makefile                                # Canonical install entry point
+├── scripts/install.sh                      # Install implementation
+└── .gitignore                              # Contains "build/"
 ```
 
 ## Build Dependencies (Arch Linux)
@@ -78,7 +79,7 @@ QtWebEngine uses **CMake** + **Ninja**:
 2. **Ninja**: Executes build, tracks file timestamps, only rebuilds what changed
 
 ```
-./install.sh
+make install
      │
      ▼
 ┌─────────────────────────────────────────────────────────┐
@@ -198,7 +199,7 @@ This repo originally used three layers of git submodules (yeyitowebengine → qt
 vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolver/style_resolver.cc
 
 # 2. Build and test
-./install.sh --dirty
+make install-dirty
 ~/.local/bin/qutebrowser
 
 # 3. Happy with changes? Single commit, single push
@@ -260,7 +261,7 @@ CMake warnings about Qt version mismatches are usually safe to ignore if the bui
 ```bash
 # Force rebuild
 rm -rf build/qtwebengine
-./install.sh
+make install
 ```
 
 ---

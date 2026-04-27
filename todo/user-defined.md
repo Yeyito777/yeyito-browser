@@ -36,4 +36,4 @@
 - [ ] WebSocket frames (separate protocol — stub exists, needs DevTools `Network.webSocketFrame*` events)
 
 ### Testing
-After C++ changes, rebuild with `./install.sh --dirty`, then restart qutebrowser by sending `:restart` through the IPC socket (or just relaunch it). Navigate to a page with mixed resource types (e.g. any site with scripts, stylesheets, images). Run `network.sh list` to grab request IDs, then `network.sh detail <id>` on both a sub-resource (script/stylesheet) and a document request to verify the new field shows up where expected. Pipe the resulting `request-<id>.json` through `jq` to inspect the specific field you changed.
+After C++ changes, rebuild with `make install-dirty`, then restart qutebrowser by sending `:restart` through the IPC socket (or just relaunch it). Navigate to a page with mixed resource types (e.g. any site with scripts, stylesheets, images). Run `network.sh list` to grab request IDs, then `network.sh detail <id>` on both a sub-resource (script/stylesheet) and a document request to verify the new field shows up where expected. Pipe the resulting `request-<id>.json` through `jq` to inspect the specific field you changed.

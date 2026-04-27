@@ -467,12 +467,12 @@ qtwebengine/src/core/CMakeLists.txt:140
 
 Build after C++ changes:
 ```bash
-./install.sh --dirty    # incremental C++ rebuild + SIP + Python install
+make install-dirty    # incremental C++ rebuild + SIP + Python install
 ```
 
 Build after Python-only changes:
 ```bash
-./install.sh            # skips C++ if commit unchanged
+make install            # skips C++ if commit unchanged
 ```
 
 C++ changes require a qutebrowser restart to take effect (the library is loaded at startup).

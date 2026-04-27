@@ -341,7 +341,7 @@ Color parent_bg = parent_style->VisitedDependentColor(
 vim qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/css/resolver/style_resolver.cc
 
 # Build (1-5 min for single file change)
-./install.sh --dirty
+make install-dirty
 
 # Test
 ~/.local/bin/qutebrowser
@@ -465,7 +465,7 @@ layer->SetImage(MakeGarbageCollected<StyleGeneratedImage>(
 
 11. ~~**Drop shadow recoloring**~~ - DONE: Reads `BoxShadow()` from the style builder, recolors each shadow entry to `#090d35` while preserving original alpha and opacity. Shadow geometry (offsets, blur, spread, inset) is untouched.
 
-12. ~~**Build custom PyQt6-WebEngine bindings**~~ - DONE: PyQt6-WebEngine source lives in `pyqt6-webengine/`, with `ElementShaderEnabled` added to `qwebenginesettings.sip`. Phase 4 of `install.sh` builds and installs the custom bindings using `sip-install` against our custom Qt headers. The venv's PyQt6 module now loads our custom `.abi3.so` which correctly marshals the enum value to C++.
+12. ~~**Build custom PyQt6-WebEngine bindings**~~ - DONE: PyQt6-WebEngine source lives in `pyqt6-webengine/`, with `ElementShaderEnabled` added to `qwebenginesettings.sip`. Phase 4 of `scripts/install.sh` builds and installs the custom bindings using `sip-install` against our custom Qt headers. The venv's PyQt6 module now loads our custom `.abi3.so` which correctly marshals the enum value to C++.
 
 13. ~~**Compositor bg-color bypass**~~ - DONE: Composited `background-color` animations bypass the shader (compositor thread interpolates directly). Fixed by blocking compositor promotion for bg-color when shader is enabled (`compositor_animations.cc`).
 
@@ -535,4 +535,4 @@ if (!settings || !settings->GetElementShaderEnabled()) {
 
 ---
 
-**Note for AI agents**: This shader is confirmed working. Modify `ApplyElementShader()` to implement new color transformation logic. Always rebuild with `./install.sh --dirty` after changes. **IMPORTANT**: Modify this file if it it's outdated after any changes you make to the codebase.
+**Note for AI agents**: This shader is confirmed working. Modify `ApplyElementShader()` to implement new color transformation logic. Always rebuild with `make install-dirty` after changes. **IMPORTANT**: Modify this file if it it's outdated after any changes you make to the codebase.

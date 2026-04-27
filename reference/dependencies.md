@@ -42,7 +42,7 @@ This project builds QtWebEngine and PyQt6-WebEngine from source, replacing the s
 │  └──────────────────────┘  └──────────────────────────────────────┘  │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐    │
-│  │ Build tools (needed for ./install.sh)                        │    │
+│  │ Build tools (needed for make install)                        │    │
 │  │ cmake, ninja, gcc/clang, python, pip, sip tools              │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 │                                                                      │
@@ -62,10 +62,10 @@ This project builds QtWebEngine and PyQt6-WebEngine from source, replacing the s
 
 | Package | Source | Status | Notes |
 |---------|--------|--------|-------|
-| `qt6-webengine` | ~~pacman~~ | **Removed** | We build our own. System version (6.10.2) conflicted with our custom build (6.10.0), causing qutebrowser to nuke Service Workers on every version mismatch. Phase 4 of install.sh patches `.pri`/`.prl` files so the SIP bindings build works without this package. The launcher sets `QTWEBENGINEPROCESS_PATH`, `QTWEBENGINE_RESOURCES_PATH`, and `QTWEBENGINE_LOCALES_PATH` to find runtime files in our custom install. |
-| `python-pyqt6-webengine` | ~~pacman/pip~~ | **Removed** | We build custom SIP bindings (Phase 4 of install.sh) that include our custom enums like `ElementShaderEnabled`. |
+| `qt6-webengine` | ~~pacman~~ | **Removed** | We build our own. System version (6.10.2) conflicted with our custom build (6.10.0), causing qutebrowser to nuke Service Workers on every version mismatch. Phase 4 of scripts/install.sh patches `.pri`/`.prl` files so the SIP bindings build works without this package. The launcher sets `QTWEBENGINEPROCESS_PATH`, `QTWEBENGINE_RESOURCES_PATH`, and `QTWEBENGINE_LOCALES_PATH` to find runtime files in our custom install. |
+| `python-pyqt6-webengine` | ~~pacman/pip~~ | **Removed** | We build custom SIP bindings (Phase 4 of scripts/install.sh) that include our custom enums like `ElementShaderEnabled`. |
 | `qutebrowser` | ~~pacman~~ | **Removed** | We run from source via the venv. |
-| `python-pyqt6` | pacman | **Keep** | Provides base bindings (QtCore, QtGui, QtWidgets). Our install.sh Phase 4 copies its `bindings/` directory as a foundation. |
+| `python-pyqt6` | pacman | **Keep** | Provides base bindings (QtCore, QtGui, QtWidgets). Our scripts/install.sh Phase 4 copies its `bindings/` directory as a foundation. |
 | `python-pyqt6-sip` | pacman | **Keep** | SIP runtime needed by all PyQt6 bindings. |
 | `qt6-base` | pacman | **Keep** | Core Qt6 libraries. Everything builds against this. |
 | `qt6-declarative` | pacman | **Keep** | QtQml/QtQuick. Runtime dependency of WebEngine. |
@@ -101,7 +101,7 @@ Our custom build is pinned to a specific Qt version:
 ~/.local/bin/qutebrowser
 
 # If it crashes, rebuild everything:
-./install.sh --dirty
+make install-dirty
 ```
 
 ## Upstream Sync Strategy
@@ -118,7 +118,7 @@ We maintain three forks that diverge from upstream. Periodically syncing keeps u
 1. Check Qt's release notes for the new version
 2. Diff the upstream changes against our modifications (primarily in `style_resolver.cc` and related shader files)
 3. Rebase or merge our changes onto the new upstream tag
-4. Rebuild: `./install.sh --dirty`
+4. Rebuild: `make install-dirty`
 5. Test the element shader still works
 6. Commit and push: `git add -A && git commit -m "Sync with upstream Qt 6.x.y" && git push`
 
@@ -133,7 +133,7 @@ We maintain three forks that diverge from upstream. Periodically syncing keeps u
 
 ## Build-Time Implications of No System qt6-webengine
 
-Without the system `qt6-webengine` package, `qmake6` has no built-in knowledge of WebEngine modules. Phase 4 of `install.sh` handles this via three mechanisms:
+Without the system `qt6-webengine` package, `qmake6` has no built-in knowledge of WebEngine modules. Phase 4 of `scripts/install.sh` handles this via three mechanisms:
 
 1. **`.pri` patching**: The CMake install puts module specs in `build/install/lib/qt6/mkspecs/modules/` using `$$QT_MODULE_LIB_BASE` (resolves to `/usr/lib`). We `sed` these to absolute paths pointing to our install dir.
 

@@ -2,7 +2,7 @@
 This is my custom fork of qutebrowser with extended functionality, feel free to use it.
 This README.md only details the added functionality of this browser in comparison to qutebrowser.
 For information about literally anything else, refer to the qutebrowser's readme that you can find [here](https://github.com/qutebrowser/qutebrowser)
-I expect you to build this from source. This can get rather tedious so I've made an install script for myself: install.sh. I've included it in this repo so you can modify it to your needs.
+I expect you to build this from source. The canonical install command is `make install`, which delegates to `scripts/install.sh`. To force a rebuild with uncommitted QtWebEngine/bindings changes, use `make install-dirty`.
 
 ## Added features:
 - Run arbitrary javascript through hints by doing this:

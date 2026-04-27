@@ -246,7 +246,7 @@ If a setting "doesn't work" (value appears correct in Python but has no effect i
 
 4. **If Python throws `AttributeError: no attribute 'YourSetting'`:**
    - The SIP bindings (step 1) weren't rebuilt, or the enum is missing
-   - Run `./install.sh --dirty` to rebuild Phase 4
+   - Run `make install-dirty` to rebuild Phase 4
 
 ## File Paths Quick Reference
 
@@ -273,7 +273,7 @@ All Chromium paths are relative to `qtwebengine/src/3rdparty/chromium/`:
 
 3. **Enum position mismatch between `.sip` and `.h`**: SIP enums are positional (they map to integers). If the SIP enum has entries in a different order than the C++ enum, the wrong integer value gets passed to C++. Always keep them in sync.
 
-4. **Forgetting to rebuild both C++ and SIP bindings**: If you add a new enum value, you need both `./install.sh --dirty` (rebuilds C++) and Phase 4 (rebuilds SIP bindings). The `--dirty` flag handles both.
+4. **Forgetting to rebuild both C++ and SIP bindings**: If you add a new enum value, you need both `make install-dirty` (rebuilds C++) and Phase 4 (rebuilds SIP bindings). The `install-dirty` target handles both.
 
 5. **Wrong `invalidate` in `settings.json5`**: If you set `invalidate: []`, changing the setting won't trigger any visual update. For anything that affects rendering, use at least `["Style", "Paint"]`.
 

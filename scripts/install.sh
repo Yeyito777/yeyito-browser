@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+repo_dir=$(cd "${script_dir}/.." && pwd)
 build_dir="${repo_dir}/build"
 webengine_build="${build_dir}/qtwebengine"
 install_dir="${build_dir}/install"

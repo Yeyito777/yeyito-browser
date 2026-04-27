@@ -3,7 +3,7 @@ You're in my fork of qutebrowser's source. This fork includes a custom build of 
 
 **Important**: Do NOT run git commands (commit, push, checkout, etc.) unless explicitly instructed by the user. The user manages git operations manually to avoid confusion about which commit they're on.
 
-**Important**: After editing Blink/QtWebEngine C++ files, always run `./install.sh --dirty` to build and install. Don't wait for the user to ask.
+**Important**: After editing Blink/QtWebEngine C++ files, always run `make install-dirty` to build and install. Don't wait for the user to ask.
 
 ## Reference Files - Read These First
 
@@ -33,8 +33,8 @@ This is a **monorepo** — qtwebengine, qtwebengine-chromium, and pyqt6-webengin
 
 | Command | Purpose |
 |---------|---------|
-| `./install.sh` | Build (skips if commit unchanged) |
-| `./install.sh --dirty` | Force rebuild with uncommitted changes |
+| `make install` | Build (skips if commit unchanged) |
+| `make install-dirty` | Force rebuild with uncommitted changes |
 | `~/.local/bin/qutebrowser` | Launch with custom QtWebEngine |
 
 ### Monorepo Structure

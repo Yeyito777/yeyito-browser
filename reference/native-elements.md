@@ -693,7 +693,7 @@ if (element_shader_enabled()) {
 ### 4. Build and Test
 
 ```bash
-./install.sh --dirty
+make install-dirty
 ~/.local/bin/qutebrowser
 ```
 
@@ -744,4 +744,4 @@ All Chromium files are relative to `qtwebengine/src/3rdparty/chromium/`.
 
 ---
 
-**Note for AI agents**: This document describes the NativeTheme paint system for native form controls. When modifying native elements, always add the `element_shader_enabled()` check with the original code as fallback. Build with `./install.sh --dirty`. **IMPORTANT**: Update this file if it becomes outdated after changes to the codebase.
+**Note for AI agents**: This document describes the NativeTheme paint system for native form controls. When modifying native elements, always add the `element_shader_enabled()` check with the original code as fallback. Build with `make install-dirty`. **IMPORTANT**: Update this file if it becomes outdated after changes to the codebase.
