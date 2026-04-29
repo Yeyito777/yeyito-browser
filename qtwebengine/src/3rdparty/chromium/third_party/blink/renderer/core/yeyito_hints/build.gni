@@ -1,0 +1,11 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+blink_core_sources_yeyito_hints = [
+  "yeyito_hint_candidate.h",
+  "yeyito_hint_controller.cc",
+  "yeyito_hint_controller.h",
+  "yeyito_hint_overlay.cc",
+  "yeyito_hint_overlay.h",
+]

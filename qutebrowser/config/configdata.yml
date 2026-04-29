@@ -1713,7 +1713,7 @@ hints.auto_follow_timeout:
     successful auto-follow.
 
 hints.border:
-  default: '1px solid #E3BE23'
+  default: '0px solid #1d9bf0'
   type: String
   desc: CSS border value for hints.
 
@@ -1727,7 +1727,7 @@ hints.padding:
   desc: Padding (in pixels) for hints.
 
 hints.radius:
-  default: 3
+  default: 0
   type:
     name: Int
     minval: 0
@@ -3056,13 +3056,12 @@ colors.downloads.error.bg:
   desc: Background color for downloads with errors.
 
 colors.hints.fg:
-  default: black
+  default: '#00050f'
   type: QssColor
   desc: Font color for hints.
 
 colors.hints.bg:
-  default: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-    stop:0 rgba(255, 247, 133, 0.8), stop:1 rgba(255, 197, 66, 0.8))
+  default: '#1d9bf0'
   type: QssColor
   desc: >-
     Background color for hints.
@@ -3070,7 +3069,7 @@ colors.hints.bg:
     Note that you can use a `rgba(...)` value for transparency.
 
 colors.hints.match.fg:
-  default: green
+  default: '#00050f'
   type: QtColor
   desc: Font color for the matched part of hints.
 
@@ -3537,18 +3536,20 @@ colors.webpage.darkmode.threshold.background:
 ## fonts
 
 fonts.default_family:
-  default: []
+  default: ['JetBrains Mono']
   type:
     name: ListOrValue
     valtype: Font
     none_ok: true
   desc: >-
-    Default font families to use.
+    Default font families to use. JetBrains Mono is the canonical font family
+    for this app.
 
     Whenever "default_family" is used in a font setting, it's replaced with the
     fonts listed here.
 
-    If set to an empty value, a system-specific monospace default is used.
+    If explicitly set to an empty value, a system-specific monospace fallback is
+    used.
 
 fonts.default_size:
   default: 10pt
@@ -3578,7 +3579,7 @@ fonts.tooltip:
   type:
     name: Font
     none_ok: true
-  default: null
+  default: default_size default_family
   desc: >-
     Font used for tooltips.
 
@@ -3630,7 +3631,7 @@ fonts.messages.warning:
   desc: Font used for warning messages.
 
 fonts.prompts:
-  default: default_size sans-serif
+  default: default_size default_family
   type: Font
   desc: Font used for prompts.
 
@@ -3650,7 +3651,7 @@ fonts.tabs.unselected:
   desc: Font used for unselected tabs.
 
 fonts.web.family.standard:
-  default: ''
+  default: 'JetBrains Mono'
   supports_pattern: true
   type:
     name: FontFamily
@@ -3666,7 +3667,7 @@ fonts.web.family.fixed:
   desc: Font family for fixed fonts.
 
 fonts.web.family.serif:
-  default: ''
+  default: 'JetBrains Mono'
   supports_pattern: true
   type:
     name: FontFamily
@@ -3674,7 +3675,7 @@ fonts.web.family.serif:
   desc: Font family for serif fonts.
 
 fonts.web.family.sans_serif:
-  default: ''
+  default: 'JetBrains Mono'
   supports_pattern: true
   type:
     name: FontFamily
@@ -3690,7 +3691,7 @@ fonts.web.family.cursive:
   desc: Font family for cursive fonts.
 
 fonts.web.family.fantasy:
-  default: ''
+  default: 'JetBrains Mono'
   supports_pattern: true
   type:
     name: FontFamily
@@ -3824,7 +3825,6 @@ bindings.default:
       tl: forward -t
       wl: forward -w
       <F11>: fullscreen
-      f: hint
       F: hint all tab
       wf: hint all window
       ;b: hint all tab-bg

@@ -4,6 +4,13 @@ This README.md only details the added functionality of this browser in compariso
 For information about literally anything else, refer to the qutebrowser's readme that you can find [here](https://github.com/qutebrowser/qutebrowser)
 I expect you to build this from source. The canonical install command is `make install`, which delegates to `scripts/install.sh`. To force a rebuild with uncommitted QtWebEngine/bindings changes, use `make install-dirty`.
 
+## Canonical typography
+
+JetBrains Mono is the canonical font family for this browser. New UI, hinting,
+Chromium/Blink overlays, and default web/font settings should use JetBrains Mono
+unless there is a specific compatibility reason not to. Fallbacks are acceptable
+only when JetBrains Mono is unavailable on the system.
+
 ## Added features:
 - Run arbitrary javascript through hints by doing this:
 ```py

@@ -164,6 +164,7 @@
 #include "third_party/blink/renderer/core/view_transition/view_transition.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition_request.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition_utils.h"
+#include "third_party/blink/renderer/core/yeyito_hints/yeyito_hint_controller.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/font_performance.h"
@@ -2896,6 +2897,8 @@ void LocalFrameView::PaintTree(
       GetPage()->GetValidationMessageClient().PaintOverlay(graphics_context);
       ForAllNonThrottledLocalFrameViews(
           [&graphics_context](LocalFrameView& view) {
+            YeyitoHintController::From(*view.frame_).PaintOverlay(
+                graphics_context);
             view.frame_->PaintFrameColorOverlay(graphics_context);
           });
 

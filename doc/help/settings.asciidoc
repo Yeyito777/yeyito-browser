@@ -225,7 +225,7 @@
 |<<fonts.completion.entry,fonts.completion.entry>>|Font used in the completion widget.
 |<<fonts.contextmenu,fonts.contextmenu>>|Font used for the context menu.
 |<<fonts.debug_console,fonts.debug_console>>|Font used for the debugging console.
-|<<fonts.default_family,fonts.default_family>>|Default font families to use.
+|<<fonts.default_family,fonts.default_family>>|Default font families to use. JetBrains Mono is the canonical font family for this app.
 |<<fonts.default_size,fonts.default_size>>|Default font size to use.
 |<<fonts.downloads,fonts.downloads>>|Font used for the downloadbar.
 |<<fonts.hints,fonts.hints>>|Font used for the hints.
@@ -3081,13 +3081,13 @@ Default: +pass:[default_size default_family]+
 
 [[fonts.default_family]]
 === fonts.default_family
-Default font families to use.
+Default font families to use. JetBrains Mono is the canonical font family for this app.
 Whenever "default_family" is used in a font setting, it's replaced with the fonts listed here.
-If set to an empty value, a system-specific monospace default is used.
+If explicitly set to an empty value, a system-specific monospace fallback is used.
 
 Type: <<types,List of Font&#44; or Font>>
 
-Default: empty
+Default: +pass:[JetBrains Mono]+
 
 [[fonts.default_size]]
 === fonts.default_size
@@ -3153,7 +3153,7 @@ Font used for prompts.
 
 Type: <<types,Font>>
 
-Default: +pass:[default_size sans-serif]+
+Default: +pass:[default_size default_family]+
 
 [[fonts.statusbar]]
 === fonts.statusbar
@@ -3186,7 +3186,7 @@ If set to null, the Qt default is used.
 
 Type: <<types,Font>>
 
-Default: empty
+Default: +pass:[default_size default_family]+
 
 [[fonts.web.family.cursive]]
 === fonts.web.family.cursive
@@ -3196,7 +3196,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: empty
+Default: +pass:[JetBrains Mono]+
 
 [[fonts.web.family.fantasy]]
 === fonts.web.family.fantasy
@@ -3206,7 +3206,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: empty
+Default: +pass:[JetBrains Mono]+
 
 [[fonts.web.family.fixed]]
 === fonts.web.family.fixed
@@ -3216,7 +3216,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: empty
+Default: +pass:[JetBrains Mono]+
 
 [[fonts.web.family.sans_serif]]
 === fonts.web.family.sans_serif
@@ -3226,7 +3226,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: empty
+Default: +pass:[JetBrains Mono]+
 
 [[fonts.web.family.serif]]
 === fonts.web.family.serif
@@ -3236,7 +3236,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: empty
+Default: +pass:[JetBrains Mono]+
 
 [[fonts.web.family.standard]]
 === fonts.web.family.standard
@@ -3246,7 +3246,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: empty
+Default: +pass:[JetBrains Mono]+
 
 [[fonts.web.size.default]]
 === fonts.web.size.default
