@@ -457,8 +457,10 @@ jumbo_component("core") {
   # Keep local qutebrowser/Chromium hinting work out of Blink jumbo files so
   # normal edit-build-test cycles recompile only the hinting translation units.
   jumbo_excluded_sources += rebase_path([
-                                          "yeyito_hint_controller.cc",
-                                          "yeyito_hint_overlay.cc",
+                                          "click_hints.cc",
+                                          "hints.cc",
+                                          "labels.cc",
+                                          "overlay.cc",
                                         ],
                                         "",
                                         "yeyito_hints")

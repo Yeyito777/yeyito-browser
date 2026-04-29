@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_YEYITO_HINT_CANDIDATE_H_
-#define THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_YEYITO_HINT_CANDIDATE_H_
+#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_CANDIDATE_H_
+#define THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_CANDIDATE_H_
 
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
@@ -12,7 +12,7 @@
 
 namespace blink {
 
-struct YeyitoHintCandidate {
+struct HintCandidate {
   DISALLOW_NEW();
 
  public:
@@ -25,6 +25,6 @@ struct YeyitoHintCandidate {
 
 }  // namespace blink
 
-WTF_ALLOW_CLEAR_UNUSED_SLOTS_WITH_MEM_FUNCTIONS(blink::YeyitoHintCandidate)
+WTF_ALLOW_CLEAR_UNUSED_SLOTS_WITH_MEM_FUNCTIONS(blink::HintCandidate)
 
-#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_YEYITO_HINT_CANDIDATE_H_
+#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_CANDIDATE_H_

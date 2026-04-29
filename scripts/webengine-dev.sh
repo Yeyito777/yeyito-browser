@@ -28,7 +28,7 @@ outer_marker_outputs=(
     "${core_build_dir}/webenginedriver_group"
     "${core_build_dir}/QtWebEngineCore"
 )
-outer_core_library="${webengine_build}/lib/libQt6WebEngineCore.so.6.10.2"
+outer_core_library="${webengine_build}/lib/libQt6WebEngineCore.so"
 
 usage() {
     cat <<EOF
@@ -115,7 +115,7 @@ build_webengine() {
 
     # Relink/copy the outer Qt library only when the inner stamp changed.
     ninja -C "${webengine_build}" -j"${jobs}" \
-        lib/libQt6WebEngineCore.so.6.10.2 WebEngineWidgets
+        lib/libQt6WebEngineCore.so WebEngineWidgets
 }
 
 install_regular_file_if_changed() {
@@ -133,13 +133,19 @@ install_regular_file_if_changed() {
 
 install_qt_library_family() {
     local stem="$1"
-    local source_versioned="${webengine_build}/lib/${stem}.so.6.10.2"
-    if [[ ! -f "${source_versioned}" ]]; then
+    local source_abi="${webengine_build}/lib/${stem}.so.6"
+    if [[ ! -e "${source_abi}" ]]; then
         return 0
     fi
+
+    local source_versioned
+    source_versioned=$(readlink -f "${source_abi}")
+    local versioned_name
+    versioned_name=$(basename "${source_versioned}")
+
     install_regular_file_if_changed "${source_versioned}" \
-        "${install_dir}/lib/${stem}.so.6.10.2"
-    ln -sfn "${stem}.so.6.10.2" "${install_dir}/lib/${stem}.so.6"
+        "${install_dir}/lib/${versioned_name}"
+    ln -sfn "${versioned_name}" "${install_dir}/lib/${stem}.so.6"
     ln -sfn "${stem}.so.6" "${install_dir}/lib/${stem}.so"
 }
 

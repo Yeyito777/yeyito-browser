@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "third_party/blink/renderer/core/yeyito_hints/yeyito_hint_overlay.h"
+#include "third_party/blink/renderer/core/yeyito_hints/overlay.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,8 +13,9 @@
 #include "skia/ext/font_utils.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
-#include "third_party/blink/renderer/core/yeyito_hints/yeyito_hint_candidate.h"
-#include "third_party/blink/renderer/core/yeyito_hints/yeyito_hint_controller.h"
+#include "third_party/blink/renderer/core/yeyito_hints/candidate.h"
+#include "third_party/blink/renderer/core/yeyito_hints/hints.h"
+#include "third_party/blink/renderer/core/yeyito_hints/labels.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 #include "third_party/skia/include/core/SkFont.h"
@@ -30,15 +31,13 @@ constexpr SkColor kHintBackground = SkColorSetRGB(0x1d, 0x9b, 0xf0);
 constexpr SkColor kHintForeground = SkColorSetRGB(0x00, 0x05, 0x0f);
 constexpr SkColor kHintMatchedForeground = SkColorSetRGB(0xff, 0xff, 0xff);
 
-constexpr char kHintAlphabet[] = "asdfghjklqwertyuiopzxcvbnm";
-
 bool LabelIsVisibleForPrefix(const String& label, const String& prefix) {
   return prefix.empty() || label.StartsWith(prefix);
 }
 
 SkScalar HintCellWidth(const SkFont& font) {
   SkScalar max_width = 0;
-  for (const char* c = kHintAlphabet; *c; ++c) {
+  for (const char* c = hint_labels::kAlphabet; *c; ++c) {
     max_width =
         std::max(max_width, font.measureText(c, 1, SkTextEncoding::kUTF8));
   }
@@ -97,7 +96,7 @@ void PaintLabel(cc::PaintCanvas& canvas,
   }
 
   SkFont font(HintTypeface());
-  font.setSize(12.0f);
+  font.setSize(13.0f);
 
   const SkScalar text_width =
       font.measureText(text.data(), text.size(), SkTextEncoding::kUTF8);
@@ -105,12 +104,13 @@ void PaintLabel(cc::PaintCanvas& canvas,
   SkFontMetrics metrics;
   font.getMetrics(&metrics);
 
-  constexpr float kHorizontalPadding = 3.0f;
-  constexpr float kExtraHeight = 5.0f;
+  constexpr float kHorizontalPadding = 0.0f;
+  constexpr float kVerticalMetricTrim = 3.0f;
   const float text_height = metrics.fDescent - metrics.fAscent;
   const float width =
       std::max(12.0f, std::ceil(label_width + 2 * kHorizontalPadding));
-  const float height = std::ceil(std::max(12.0f, text_height) + kExtraHeight);
+  const float height =
+      std::ceil(std::max(12.0f, text_height - kVerticalMetricTrim));
 
   const float left = std::max(0.0f, point.x());
   const float top = std::max(0.0f, point.y());
@@ -143,15 +143,12 @@ void PaintLabel(cc::PaintCanvas& canvas,
 
 }  // namespace
 
-YeyitoHintOverlayDelegate::YeyitoHintOverlayDelegate(
-    YeyitoHintController& controller)
-    : controller_(&controller) {}
+HintOverlayDelegate::HintOverlayDelegate(Hints& hints) : hints_(&hints) {}
 
-void YeyitoHintOverlayDelegate::PaintFrameOverlay(
-    const FrameOverlay& frame_overlay,
-    GraphicsContext& context,
-    const gfx::Size& view_size) const {
-  if (!controller_ || !controller_->IsActive()) {
+void HintOverlayDelegate::PaintFrameOverlay(const FrameOverlay& frame_overlay,
+                                            GraphicsContext& context,
+                                            const gfx::Size& view_size) const {
+  if (!hints_ || !hints_->IsActive()) {
     return;
   }
 
@@ -167,8 +164,8 @@ void YeyitoHintOverlayDelegate::PaintFrameOverlay(
     return;
   }
 
-  const String& prefix = controller_->TypedPrefix();
-  for (const auto& candidate : controller_->Candidates()) {
+  const String& prefix = hints_->TypedPrefix();
+  for (const auto& candidate : hints_->Candidates()) {
     if (!candidate.element) {
       continue;
     }
@@ -181,11 +178,11 @@ void YeyitoHintOverlayDelegate::PaintFrameOverlay(
   }
 }
 
-void YeyitoHintOverlayDelegate::Invalidate() {
-  if (!controller_) {
+void HintOverlayDelegate::Invalidate() {
+  if (!hints_) {
     return;
   }
-  LocalFrame* frame = controller_->GetFrame();
+  LocalFrame* frame = hints_->GetFrame();
   if (!frame || !frame->View()) {
     return;
   }

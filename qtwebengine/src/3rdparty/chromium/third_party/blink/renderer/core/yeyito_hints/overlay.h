@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_YEYITO_HINT_OVERLAY_H_
-#define THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_YEYITO_HINT_OVERLAY_H_
+#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_OVERLAY_H_
+#define THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_OVERLAY_H_
 
 #include <memory>
 
@@ -12,12 +12,12 @@
 
 namespace blink {
 
-class YeyitoHintController;
+class Hints;
 
-class YeyitoHintOverlayDelegate final : public FrameOverlay::Delegate {
+class HintOverlayDelegate final : public FrameOverlay::Delegate {
  public:
-  explicit YeyitoHintOverlayDelegate(YeyitoHintController& controller);
-  ~YeyitoHintOverlayDelegate() override = default;
+  explicit HintOverlayDelegate(Hints& hints);
+  ~HintOverlayDelegate() override = default;
 
   void PaintFrameOverlay(const FrameOverlay& frame_overlay,
                          GraphicsContext& context,
@@ -25,9 +25,9 @@ class YeyitoHintOverlayDelegate final : public FrameOverlay::Delegate {
   void Invalidate() override;
 
  private:
-  Persistent<YeyitoHintController> controller_;
+  Persistent<Hints> hints_;
 };
 
 }  // namespace blink
 
-#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_YEYITO_HINT_OVERLAY_H_
+#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_YEYITO_HINTS_OVERLAY_H_

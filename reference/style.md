@@ -21,7 +21,7 @@ keeps deterministic widths.
 - `qutebrowser/app.py`: `CANONICAL_FONT_FAMILY`
 - `qutebrowser/config/configdata.yml`: `fonts.default_family` and `fonts.web.family.*`
 - `qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/html/resources/html.css`: Blink user-agent font defaults
-- `qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/yeyito_hints/yeyito_hint_overlay.cc`: Chromium-native hint label typeface
+- `qtwebengine/src/3rdparty/chromium/third_party/blink/renderer/core/yeyito_hints/overlay.cc`: Chromium-native hint label typeface
 
 When adding new visual surfaces, prefer wiring them to the existing config/default
 font path. If the surface is below Python/Qt config reach, use `JetBrains Mono`

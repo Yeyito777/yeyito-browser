@@ -3,9 +3,13 @@
 # found in the LICENSE file.
 
 blink_core_sources_yeyito_hints = [
-  "yeyito_hint_candidate.h",
-  "yeyito_hint_controller.cc",
-  "yeyito_hint_controller.h",
-  "yeyito_hint_overlay.cc",
-  "yeyito_hint_overlay.h",
+  "candidate.h",
+  "click_hints.cc",
+  "click_hints.h",
+  "hints.cc",
+  "hints.h",
+  "labels.cc",
+  "labels.h",
+  "overlay.cc",
+  "overlay.h",
 ]
