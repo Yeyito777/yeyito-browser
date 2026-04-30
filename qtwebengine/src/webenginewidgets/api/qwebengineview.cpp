@@ -31,9 +31,11 @@
 #include <QVBoxLayout>
 #include <QKeySequence>
 #include <QKeyEvent>
+#include <QHash>
 #include <QIcon>
 #include <QLabel>
 #include <QPixmap>
+#include <QPointer>
 #include <QLineEdit>
 #include <QList>
 #include <QShortcut>
@@ -297,104 +299,6 @@ void WebEngineQuickWidget::removeParentBeforeParentDelete()
         close();
 }
 
-static QTabWidget *qutebrowserFindAncestorTabWidget(QWidget *source, int *viewIndex = nullptr)
-{
-    if (viewIndex)
-        *viewIndex = -1;
-    if (!source)
-        return nullptr;
-
-    for (QWidget *candidate = source; candidate; candidate = candidate->parentWidget()) {
-        auto *tabWidget = qobject_cast<QTabWidget *>(candidate);
-        if (!tabWidget)
-            continue;
-        for (int index = 0; index < tabWidget->count(); ++index) {
-            QWidget *pageWidget = tabWidget->widget(index);
-            if (pageWidget && (pageWidget == source || pageWidget->isAncestorOf(source))) {
-                if (viewIndex)
-                    *viewIndex = index;
-                return tabWidget;
-            }
-        }
-    }
-    return nullptr;
-}
-
-static QTabBar *qutebrowserFindSingleTabBar(QTabWidget *tabWidget)
-{
-    if (!tabWidget)
-        return nullptr;
-    const QList<QTabBar *> directBars = tabWidget->findChildren<QTabBar *>(QString(),
-                                                                          Qt::FindDirectChildrenOnly);
-    if (directBars.size() == 1)
-        return directBars.first();
-    if (directBars.size() > 1)
-        return nullptr;
-    const QList<QTabBar *> bars = tabWidget->findChildren<QTabBar *>();
-    return bars.size() == 1 ? bars.first() : nullptr;
-}
-
-static bool qutebrowserHandleLagIndependentNormalKey(QWidget *source, QEvent *event, bool editableFocused)
-{
-    if (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease)
-        return false;
-
-    auto *keyEvent = static_cast<QKeyEvent *>(event);
-    if (event->type() == QEvent::KeyRelease) {
-        const QVariant suppressed = source->property("qutebrowserSuppressNormalKeyReleaseKey");
-        if (suppressed.isValid() && suppressed.toInt() == keyEvent->key()) {
-            source->setProperty("qutebrowserSuppressNormalKeyReleaseKey", QVariant());
-            event->accept();
-            return true;
-        }
-        return false;
-    }
-
-    if (editableFocused)
-        return false;
-
-    const QString mode = source->property("qutebrowserMode").toString();
-    if (!mode.isEmpty() && mode != QStringLiteral("normal"))
-        return false;
-    if (!source->property("qutebrowserKeychain").toString().isEmpty() ||
-        !source->property("qutebrowserCount").toString().isEmpty())
-        return false;
-
-    const Qt::KeyboardModifiers modifiers = keyEvent->modifiers();
-    if ((modifiers & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) ||
-        !(modifiers & Qt::ShiftModifier))
-        return false;
-
-    int delta = 0;
-    if (keyEvent->key() == Qt::Key_J)
-        delta = 1;
-    else if (keyEvent->key() == Qt::Key_K)
-        delta = -1;
-    else
-        return false;
-
-    int viewIndex = -1;
-    QTabWidget *tabWidget = qutebrowserFindAncestorTabWidget(source, &viewIndex);
-    if (!tabWidget || viewIndex < 0 || viewIndex != tabWidget->currentIndex())
-        return false;
-
-    QTabBar *tabBar = qutebrowserFindSingleTabBar(tabWidget);
-    int currentIndex = tabBar && tabBar->currentIndex() >= 0
-            ? tabBar->currentIndex()
-            : tabWidget->currentIndex();
-    const int count = tabBar ? tabBar->count() : tabWidget->count();
-    const int targetIndex = currentIndex + delta;
-    if (targetIndex < 0 || targetIndex >= count)
-        return false;
-
-    if (tabBar)
-        tabBar->setCurrentIndex(targetIndex);
-    tabWidget->setCurrentIndex(targetIndex);
-    source->setProperty("qutebrowserSuppressNormalKeyReleaseKey", keyEvent->key());
-    event->accept();
-    return true;
-}
-
 bool WebEngineQuickWidget::event(QEvent *event)
 {
     bool handled = false;
@@ -432,9 +336,6 @@ bool WebEngineQuickWidget::event(QEvent *event)
             break;
         }
     }
-
-    if (qutebrowserHandleLagIndependentNormalKey(this, event, inputMethodQuery(Qt::ImEnabled).toBool()))
-        return true;
 
     switch (event->type()) {
     case QEvent::FocusIn:
@@ -811,180 +712,394 @@ static QString qutebrowserTabDisplayUrl(const QUrl &url)
     return text;
 }
 
+static QTabBar *qutebrowserShellTabBar(QTabWidget *tabWidget)
+{
+    if (!tabWidget)
+        return nullptr;
+    const QList<QTabBar *> directBars = tabWidget->findChildren<QTabBar *>(QString(),
+                                                                          Qt::FindDirectChildrenOnly);
+    if (directBars.size() == 1)
+        return directBars.first();
+    if (directBars.size() > 1)
+        return nullptr;
+    const QList<QTabBar *> bars = tabWidget->findChildren<QTabBar *>();
+    return bars.size() == 1 ? bars.first() : nullptr;
+}
+
+class QutebrowserChromeShell final : public QObject
+{
+public:
+    explicit QutebrowserChromeShell(QTabWidget *tabWidget)
+        : QObject(tabWidget)
+        , m_tabWidget(tabWidget)
+    {
+        qApp->installEventFilter(this);
+        ensureSidebar();
+        QObject::connect(tabWidget, &QObject::destroyed, this, [this]() {
+            qApp->removeEventFilter(this);
+        });
+        QObject::connect(tabWidget, &QTabWidget::currentChanged, this, [this](int) {
+            refresh();
+        });
+        refresh();
+    }
+
+    ~QutebrowserChromeShell() override
+    {
+        if (qApp)
+            qApp->removeEventFilter(this);
+    }
+
+    void setModeState(const QString &mode, const QString &keychain, const QString &count)
+    {
+        m_mode = mode;
+        m_keychain = keychain;
+        m_count = count;
+    }
+
+    void refresh()
+    {
+        if (!m_tabWidget)
+            return;
+        ensureSidebar();
+        updateTabBarConnection();
+        positionSidebar();
+        renderSidebar();
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (!m_tabWidget)
+            return QObject::eventFilter(watched, event);
+
+        if (watched == m_tabWidget && (event->type() == QEvent::Resize ||
+                                       event->type() == QEvent::Show ||
+                                       event->type() == QEvent::LayoutRequest)) {
+            positionSidebar();
+            if (event->type() == QEvent::LayoutRequest)
+                refresh();
+        }
+
+        if (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease)
+            return QObject::eventFilter(watched, event);
+
+        auto *targetWidget = qobject_cast<QWidget *>(watched);
+        if (!targetWidget || !isInThisWindow(targetWidget))
+            return QObject::eventFilter(watched, event);
+
+        if (handleBrowserTabKey(targetWidget, event))
+            return true;
+
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    bool isInThisWindow(QWidget *widget) const
+    {
+        return widget && m_tabWidget &&
+                (widget == m_tabWidget || m_tabWidget->isAncestorOf(widget));
+    }
+
+    void ensureSidebar()
+    {
+        if (!m_tabWidget || m_sidebar)
+            return;
+
+        auto *sidebar = new QWidget(m_tabWidget);
+        sidebar->setObjectName(QStringLiteral("QutebrowserChromeTabSidebar"));
+        sidebar->setAutoFillBackground(true);
+        sidebar->setFocusPolicy(Qt::NoFocus);
+        sidebar->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+
+        auto *layout = new QVBoxLayout(sidebar);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+        layout->addStretch(1);
+
+        sidebar->setStyleSheet(QStringLiteral(
+                "QWidget#QutebrowserChromeTabSidebar {"
+                "  background: #000a1a; color: #cce7ff;"
+                "  border-right: 1px solid #001020;"
+                "}"
+                "QWidget#QutebrowserChromeTabRow { background: #001020; border: 0px; }"
+                "QWidget#QutebrowserChromeTabRow[selected=\"true\"] { background: #1d9bf0; }"
+                "QLabel#QutebrowserChromeTabNumber { background: transparent; color: #cce7ff; padding: 0px; border: 0px; }"
+                "QLabel#QutebrowserChromeTabText { background: transparent; color: #cce7ff; padding: 0px; border: 0px; }"
+                "QWidget#QutebrowserChromeTabRow[selected=\"true\"] QLabel { color: #ffffff; }"
+                "QLabel#QutebrowserChromeTabIcon { background: transparent; padding: 0px; border: 0px; }"));
+
+        m_sidebar = sidebar;
+        m_sidebarLayout = layout;
+        positionSidebar();
+        sidebar->show();
+        sidebar->raise();
+    }
+
+    void positionSidebar()
+    {
+        if (!m_tabWidget || !m_sidebar)
+            return;
+        m_sidebar->setGeometry(0, 0, qutebrowserNativeTabSidebarWidth, m_tabWidget->height());
+        m_sidebar->raise();
+    }
+
+    void updateTabBarConnection()
+    {
+        QTabBar *tabBar = qutebrowserShellTabBar(m_tabWidget);
+        if (m_tabBar == tabBar)
+            return;
+        QObject::disconnect(m_tabBarMovedConnection);
+        QObject::disconnect(m_tabBarCurrentConnection);
+        m_tabBarMovedConnection = {};
+        m_tabBarCurrentConnection = {};
+        m_tabBar = tabBar;
+        if (tabBar) {
+            m_tabBarMovedConnection = QObject::connect(tabBar, &QTabBar::tabMoved,
+                                                       this, [this](int, int) { refresh(); });
+            m_tabBarCurrentConnection = QObject::connect(tabBar, &QTabBar::currentChanged,
+                                                         this, [this](int) { refresh(); });
+        }
+    }
+
+    QString textForIndex(int index) const
+    {
+        if (!m_tabWidget || index < 0 || index >= m_tabWidget->count())
+            return QStringLiteral("about:blank");
+
+        // Prefer the browser-process QWebEngineView URL cache so the native
+        // sidebar keeps qutebrowser's "[num] <favicon> <link>" shape instead
+        // of duplicating qutebrowser's configurable tab-title text. This is a
+        // UI-side accessor; it does not round-trip through the renderer.
+        QWidget *tabWidgetPage = m_tabWidget->widget(index);
+        if (tabWidgetPage) {
+            if (auto *view = tabWidgetPage->findChild<QWebEngineView *>()) {
+                const QString urlText = qutebrowserTabDisplayUrl(view->url());
+                if (!urlText.isEmpty())
+                    return urlText;
+            }
+        }
+
+        QTabBar *tabBar = m_tabBar ? m_tabBar.data() : qutebrowserShellTabBar(m_tabWidget);
+        QString text = tabBar ? tabBar->tabText(index) : QString();
+        if (!text.isEmpty()) {
+            const int colon = text.indexOf(QStringLiteral(": "));
+            if (colon > 0)
+                text = text.mid(colon + 2);
+            const int space = text.indexOf(QLatin1Char(' '));
+            if (space > 0 && text.left(space).toInt() == index + 1)
+                text = text.mid(space + 1);
+            return text.trimmed();
+        }
+        return QStringLiteral("about:blank");
+    }
+
+    void renderSidebar()
+    {
+        if (!m_sidebar || !m_sidebarLayout || !m_tabWidget)
+            return;
+
+        while (m_sidebarLayout->count() > 1) {
+            QLayoutItem *item = m_sidebarLayout->takeAt(0);
+            if (QWidget *widget = item ? item->widget() : nullptr)
+                widget->deleteLater();
+            delete item;
+        }
+
+        QFont font(QStringLiteral("JetBrains Mono"));
+        font.setStyleHint(QFont::Monospace);
+        font.setPointSize(9);
+        const QFontMetrics metrics(font);
+        const int iconExtent = qMax(10, metrics.height() - 2);
+
+        QTabBar *tabBar = m_tabBar ? m_tabBar.data() : qutebrowserShellTabBar(m_tabWidget);
+        const int tabCount = tabBar ? tabBar->count() : m_tabWidget->count();
+        const int selected = tabBar && tabBar->currentIndex() >= 0
+                ? tabBar->currentIndex()
+                : m_tabWidget->currentIndex();
+        const int numberWidth = metrics.horizontalAdvance(QString::number(qMax(1, tabCount))) + 2;
+        const int textWidth = qMax(20, qutebrowserNativeTabSidebarWidth - 10 - numberWidth - 4 - (iconExtent + 4) - 4);
+
+        for (int i = 0; i < tabCount; ++i) {
+            QString text = metrics.elidedText(textForIndex(i), Qt::ElideRight, textWidth);
+
+            auto *row = new QWidget(m_sidebar);
+            row->setObjectName(QStringLiteral("QutebrowserChromeTabRow"));
+            row->setFocusPolicy(Qt::NoFocus);
+            row->setFixedHeight(qMax(18, metrics.height() + 2));
+            row->setProperty("selected", i == selected);
+
+            auto *rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(5, 0, 5, 0);
+            rowLayout->setSpacing(0);
+
+            auto *numberLabel = new QLabel(row);
+            numberLabel->setObjectName(QStringLiteral("QutebrowserChromeTabNumber"));
+            numberLabel->setTextFormat(Qt::PlainText);
+            numberLabel->setFont(font);
+            numberLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+            numberLabel->setFocusPolicy(Qt::NoFocus);
+            numberLabel->setFixedWidth(numberWidth);
+            numberLabel->setText(QString::number(i + 1));
+
+            auto *iconLabel = new QLabel(row);
+            iconLabel->setObjectName(QStringLiteral("QutebrowserChromeTabIcon"));
+            iconLabel->setFocusPolicy(Qt::NoFocus);
+            iconLabel->setAlignment(Qt::AlignCenter);
+            iconLabel->setFixedSize(iconExtent + 4, iconExtent);
+            const QIcon icon = tabBar ? tabBar->tabIcon(i) : QIcon();
+            if (!icon.isNull())
+                iconLabel->setPixmap(icon.pixmap(iconExtent, iconExtent));
+
+            auto *textLabel = new QLabel(row);
+            textLabel->setObjectName(QStringLiteral("QutebrowserChromeTabText"));
+            textLabel->setTextFormat(Qt::PlainText);
+            textLabel->setFont(font);
+            textLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+            textLabel->setFocusPolicy(Qt::NoFocus);
+            textLabel->setWordWrap(false);
+            textLabel->setText(text);
+
+            rowLayout->addWidget(numberLabel);
+            rowLayout->addSpacing(4);
+            rowLayout->addWidget(iconLabel);
+            rowLayout->addSpacing(4);
+            rowLayout->addWidget(textLabel, 1);
+            m_sidebarLayout->insertWidget(i, row);
+        }
+    }
+
+    bool editableFocused(QWidget *eventTarget) const
+    {
+        QWidget *focus = QApplication::focusWidget();
+        if (!focus)
+            focus = eventTarget;
+        if (!isInThisWindow(focus))
+            return false;
+        if (qobject_cast<QLineEdit *>(focus))
+            return true;
+        return focus->inputMethodQuery(Qt::ImEnabled).toBool();
+    }
+
+    bool handleBrowserTabKey(QWidget *targetWidget, QEvent *event)
+    {
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        if (event->type() == QEvent::KeyRelease) {
+            if (m_suppressedReleaseKey == keyEvent->key()) {
+                m_suppressedReleaseKey = 0;
+                event->accept();
+                return true;
+            }
+            return false;
+        }
+
+        if (editableFocused(targetWidget))
+            return false;
+        if (!m_mode.isEmpty() && m_mode != QStringLiteral("normal"))
+            return false;
+        if (!m_keychain.isEmpty() || !m_count.isEmpty())
+            return false;
+
+        const Qt::KeyboardModifiers modifiers = keyEvent->modifiers();
+        if ((modifiers & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) ||
+            !(modifiers & Qt::ShiftModifier))
+            return false;
+
+        int delta = 0;
+        if (keyEvent->key() == Qt::Key_J)
+            delta = 1;
+        else if (keyEvent->key() == Qt::Key_K)
+            delta = -1;
+        else
+            return false;
+
+        QTabBar *tabBar = m_tabBar ? m_tabBar.data() : qutebrowserShellTabBar(m_tabWidget);
+        int currentIndex = tabBar && tabBar->currentIndex() >= 0
+                ? tabBar->currentIndex()
+                : m_tabWidget->currentIndex();
+        const int count = tabBar ? tabBar->count() : m_tabWidget->count();
+        if (count <= 1 || currentIndex < 0)
+            return false;
+
+        int targetIndex = currentIndex + delta;
+        if (targetIndex < 0)
+            targetIndex = count - 1;
+        else if (targetIndex >= count)
+            targetIndex = 0;
+
+        if (tabBar)
+            tabBar->setCurrentIndex(targetIndex);
+        m_tabWidget->setCurrentIndex(targetIndex);
+        m_suppressedReleaseKey = keyEvent->key();
+        refresh();
+        event->accept();
+        return true;
+    }
+
+    QPointer<QTabWidget> m_tabWidget;
+    QPointer<QTabBar> m_tabBar;
+    QWidget *m_sidebar = nullptr;
+    QVBoxLayout *m_sidebarLayout = nullptr;
+    QMetaObject::Connection m_tabBarMovedConnection;
+    QMetaObject::Connection m_tabBarCurrentConnection;
+    QString m_mode = QStringLiteral("normal");
+    QString m_keychain;
+    QString m_count;
+    int m_suppressedReleaseKey = 0;
+};
+
+static QHash<QTabWidget *, QPointer<QutebrowserChromeShell>> &qutebrowserChromeShellRegistry()
+{
+    static QHash<QTabWidget *, QPointer<QutebrowserChromeShell>> registry;
+    return registry;
+}
+
+static QutebrowserChromeShell *qutebrowserChromeShellForTabWidget(QTabWidget *tabWidget)
+{
+    if (!tabWidget)
+        return nullptr;
+    auto &registry = qutebrowserChromeShellRegistry();
+    QPointer<QutebrowserChromeShell> shell = registry.value(tabWidget);
+    if (!shell) {
+        shell = new QutebrowserChromeShell(tabWidget);
+        registry.insert(tabWidget, shell);
+        QObject::connect(tabWidget, &QObject::destroyed, shell, [tabWidget]() {
+            qutebrowserChromeShellRegistry().remove(tabWidget);
+        });
+    }
+    return shell;
+}
+
 void QWebEngineViewPrivate::ensureQutebrowserTabSidebar()
 {
     Q_Q(QWebEngineView);
-    if (m_qutebrowserTabSidebar)
-        return;
+    if (auto *layout = qobject_cast<QBoxLayout *>(q->layout()))
+        layout->setContentsMargins(qutebrowserNativeTabSidebarWidth, 0, 0, 0);
 
-    auto *sidebar = new QWidget(q);
-    sidebar->setObjectName(QStringLiteral("QutebrowserChromeTabSidebar"));
-    sidebar->setAutoFillBackground(true);
-    sidebar->setFixedWidth(qutebrowserNativeTabSidebarWidth);
-    sidebar->setFocusPolicy(Qt::NoFocus);
-
-    auto *layout = new QVBoxLayout(sidebar);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    layout->addStretch(1);
-
-    sidebar->setStyleSheet(QStringLiteral(
-            "QWidget#QutebrowserChromeTabSidebar {"
-            "  background: #000a1a; color: #cce7ff;"
-            "  border-right: 1px solid #001020;"
-            "}"
-            "QWidget#QutebrowserChromeTabRow { background: #001020; border: 0px; }"
-            "QWidget#QutebrowserChromeTabRow[selected=\"true\"] { background: #1d9bf0; }"
-            "QLabel#QutebrowserChromeTabNumber { background: transparent; color: #cce7ff; padding: 0px; border: 0px; }"
-            "QLabel#QutebrowserChromeTabText { background: transparent; color: #cce7ff; padding: 0px; border: 0px; }"
-            "QWidget#QutebrowserChromeTabRow[selected=\"true\"] QLabel { color: #ffffff; }"
-            "QLabel#QutebrowserChromeTabIcon { background: transparent; padding: 0px; border: 0px; }"));
-
-    if (auto *boxLayout = qobject_cast<QBoxLayout *>(q->layout()))
-        boxLayout->insertWidget(0, sidebar);
-    else if (q->layout())
-        q->layout()->addWidget(sidebar);
-
-    m_qutebrowserTabSidebar = sidebar;
-    m_qutebrowserTabListLayout = layout;
-    updateQutebrowserTabSidebar();
-}
-
-void QWebEngineViewPrivate::updateQutebrowserTabModelConnections(QTabWidget *tabWidget, QTabBar *tabBar)
-{
-    Q_Q(QWebEngineView);
-    if (m_qutebrowserTabWidget == tabWidget && m_qutebrowserTabBar == tabBar)
-        return;
-
-    QObject::disconnect(m_qutebrowserTabCurrentConnection);
-    QObject::disconnect(m_qutebrowserTabMovedConnection);
-    m_qutebrowserTabCurrentConnection = {};
-    m_qutebrowserTabMovedConnection = {};
-    m_qutebrowserTabWidget = tabWidget;
-    m_qutebrowserTabBar = tabBar;
-
-    if (tabWidget) {
-        m_qutebrowserTabCurrentConnection = QObject::connect(tabWidget, &QTabWidget::currentChanged,
-                                                             q, [this](int) {
-            updateQutebrowserTabSidebar();
-        });
-    }
-    if (tabBar) {
-        m_qutebrowserTabMovedConnection = QObject::connect(tabBar, &QTabBar::tabMoved,
-                                                           q, [this](int, int) {
-            updateQutebrowserTabSidebar();
-        });
+    int viewIndex = -1;
+    QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, nullptr);
+    if (QutebrowserChromeShell *shell = qutebrowserChromeShellForTabWidget(tabWidget)) {
+        shell->setModeState(m_qutebrowserMode, m_qutebrowserKeychain, m_qutebrowserCount);
+        shell->refresh();
     }
 }
 
 void QWebEngineViewPrivate::updateQutebrowserTabSidebar()
 {
-    ensureQutebrowserTabSidebar();
-
-    if (!page) {
-        m_qutebrowserTabSidebar->hide();
-        return;
-    }
-
-    m_qutebrowserTabSidebar->show();
-    if (!m_qutebrowserTabListLayout)
-        return;
-
-    QFont font(QStringLiteral("JetBrains Mono"));
-    font.setStyleHint(QFont::Monospace);
-    font.setPointSize(9);
-    const QFontMetrics metrics(font);
-    const int iconExtent = qMax(10, metrics.height() - 2);
+    Q_Q(QWebEngineView);
+    if (auto *layout = qobject_cast<QBoxLayout *>(q->layout()))
+        layout->setContentsMargins(qutebrowserNativeTabSidebarWidth, 0, 0, 0);
 
     int viewIndex = -1;
-    int currentIndex = -1;
-    QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, &currentIndex);
-    QTabBar *tabBar = qutebrowserAncestorTabBar(tabWidget);
-    if (tabBar && tabBar->currentIndex() >= 0)
-        currentIndex = tabBar->currentIndex();
-    updateQutebrowserTabModelConnections(tabWidget, tabBar);
-
-    const int tabCount = tabBar ? tabBar->count() : (tabWidget ? tabWidget->count() : 1);
-    const int selected = currentIndex >= 0 ? currentIndex : 0;
-    const int numberWidth = metrics.horizontalAdvance(QString::number(qMax(1, tabCount))) + 2;
-    const int textWidth = qMax(20, qutebrowserNativeTabSidebarWidth - 10 - numberWidth - 4 - (iconExtent + 4) - 4);
-
-    while (m_qutebrowserTabListLayout->count() > 1) {
-        QLayoutItem *item = m_qutebrowserTabListLayout->takeAt(0);
-        if (QWidget *widget = item ? item->widget() : nullptr)
-            widget->deleteLater();
-        delete item;
-    }
-
-    for (int i = 0; i < tabCount; ++i) {
-        QWebEnginePage *tabPage = nullptr;
-        if (tabWidget && i < tabWidget->count()) {
-            if (QWidget *tabWidgetPage = tabWidget->widget(i)) {
-                if (auto *view = tabWidgetPage->findChild<QWebEngineView *>())
-                    tabPage = view->page();
-            }
-        } else {
-            tabPage = page;
-        }
-
-        QString text = qutebrowserTabDisplayUrl(tabPage ? tabPage->url() : QUrl());
-        text = metrics.elidedText(text, Qt::ElideRight, textWidth);
-
-        auto *row = new QWidget(m_qutebrowserTabSidebar);
-        row->setObjectName(QStringLiteral("QutebrowserChromeTabRow"));
-        row->setFocusPolicy(Qt::NoFocus);
-        row->setFixedHeight(qMax(18, metrics.height() + 2));
-        row->setProperty("selected", i == selected);
-
-        auto *rowLayout = new QHBoxLayout(row);
-        rowLayout->setContentsMargins(5, 0, 5, 0);
-        rowLayout->setSpacing(0);
-
-        auto *numberLabel = new QLabel(row);
-        numberLabel->setObjectName(QStringLiteral("QutebrowserChromeTabNumber"));
-        numberLabel->setTextFormat(Qt::PlainText);
-        numberLabel->setFont(font);
-        numberLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        numberLabel->setFocusPolicy(Qt::NoFocus);
-        numberLabel->setFixedWidth(numberWidth);
-        numberLabel->setText(QString::number(i + 1));
-
-        auto *iconLabel = new QLabel(row);
-        iconLabel->setObjectName(QStringLiteral("QutebrowserChromeTabIcon"));
-        iconLabel->setFocusPolicy(Qt::NoFocus);
-        iconLabel->setAlignment(Qt::AlignCenter);
-        iconLabel->setFixedSize(iconExtent + 4, iconExtent);
-        QIcon icon = tabBar ? tabBar->tabIcon(i) : QIcon();
-        if (icon.isNull() && tabPage)
-            icon = tabPage->icon();
-        if (!icon.isNull())
-            iconLabel->setPixmap(icon.pixmap(iconExtent, iconExtent));
-
-        auto *textLabel = new QLabel(row);
-        textLabel->setObjectName(QStringLiteral("QutebrowserChromeTabText"));
-        textLabel->setTextFormat(Qt::PlainText);
-        textLabel->setFont(font);
-        textLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        textLabel->setFocusPolicy(Qt::NoFocus);
-        textLabel->setWordWrap(false);
-        textLabel->setText(text);
-
-        rowLayout->addWidget(numberLabel);
-        rowLayout->addSpacing(4);
-        rowLayout->addWidget(iconLabel);
-        rowLayout->addSpacing(4);
-        rowLayout->addWidget(textLabel, 1);
-        m_qutebrowserTabListLayout->insertWidget(i, row);
+    QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, nullptr);
+    if (QutebrowserChromeShell *shell = qutebrowserChromeShellForTabWidget(tabWidget)) {
+        shell->setModeState(m_qutebrowserMode, m_qutebrowserKeychain, m_qutebrowserCount);
+        shell->refresh();
     }
 }
 
 int QWebEngineViewPrivate::qutebrowserChromeLeftInset() const
 {
-    if (!m_qutebrowserTabSidebar || !m_qutebrowserTabSidebar->isVisible())
-        return 0;
-    return m_qutebrowserTabSidebar->width() > 0
-            ? m_qutebrowserTabSidebar->width()
-            : qutebrowserNativeTabSidebarWidth;
+    return qutebrowserAncestorTabWidget(nullptr, nullptr) ? qutebrowserNativeTabSidebarWidth : 0;
 }
 
 void QWebEngineViewPrivate::ensureQutebrowserStatusOverlay()
@@ -1160,6 +1275,7 @@ void QWebEngineViewPrivate::onQutebrowserModeChanged(const QString &oldMode, con
         m_webEngineWidget->setProperty("qutebrowserKeychain", m_qutebrowserKeychain);
         m_webEngineWidget->setProperty("qutebrowserCount", m_qutebrowserCount);
     }
+    updateQutebrowserTabSidebar();
     updateQutebrowserStatusOverlay();
 }
 
@@ -1174,6 +1290,7 @@ void QWebEngineViewPrivate::onQutebrowserStatusChanged(const QString &mode, cons
         m_webEngineWidget->setProperty("qutebrowserKeychain", m_qutebrowserKeychain);
         m_webEngineWidget->setProperty("qutebrowserCount", m_qutebrowserCount);
     }
+    updateQutebrowserTabSidebar();
     updateQutebrowserStatusOverlay();
 }
 

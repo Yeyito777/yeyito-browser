@@ -112,7 +112,6 @@ public:
     bool qutebrowserSetCurrentTabIndex(int targetIndex);
     bool qutebrowserMoveCurrentTab(int targetIndex);
     bool qutebrowserHandleTabCommand(const QString &name, const QString &arguments);
-    void updateQutebrowserTabModelConnections(QTabWidget *tabWidget, QTabBar *tabBar);
     void ensureQutebrowserTabSidebar();
     void updateQutebrowserTabSidebar();
     int qutebrowserChromeLeftInset() const;
@@ -158,12 +157,6 @@ public:
     QMetaObject::Connection m_qutebrowserLoadFinishedConnection;
     QMetaObject::Connection m_qutebrowserFindConnection;
     QPointer<QtWebEngineCore::WebEngineQuickWidget> m_webEngineWidget;
-    QWidget *m_qutebrowserTabSidebar = nullptr;
-    QVBoxLayout *m_qutebrowserTabListLayout = nullptr;
-    QPointer<QTabWidget> m_qutebrowserTabWidget;
-    QPointer<QTabBar> m_qutebrowserTabBar;
-    QMetaObject::Connection m_qutebrowserTabCurrentConnection;
-    QMetaObject::Connection m_qutebrowserTabMovedConnection;
     QLabel *m_qutebrowserStatusOverlay = nullptr;
     QWidget *m_qutebrowserFindOverlay = nullptr;
     QLabel *m_qutebrowserFindPrefixLabel = nullptr;
