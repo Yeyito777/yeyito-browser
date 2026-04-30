@@ -336,10 +336,30 @@ static QTabBar *qutebrowserFindSingleTabBar(QTabWidget *tabWidget)
 
 static bool qutebrowserHandleLagIndependentNormalKey(QWidget *source, QEvent *event, bool editableFocused)
 {
-    if (editableFocused || event->type() != QEvent::KeyPress)
+    if (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease)
         return false;
 
     auto *keyEvent = static_cast<QKeyEvent *>(event);
+    if (event->type() == QEvent::KeyRelease) {
+        const QVariant suppressed = source->property("qutebrowserSuppressNormalKeyReleaseKey");
+        if (suppressed.isValid() && suppressed.toInt() == keyEvent->key()) {
+            source->setProperty("qutebrowserSuppressNormalKeyReleaseKey", QVariant());
+            event->accept();
+            return true;
+        }
+        return false;
+    }
+
+    if (editableFocused)
+        return false;
+
+    const QString mode = source->property("qutebrowserMode").toString();
+    if (!mode.isEmpty() && mode != QStringLiteral("normal"))
+        return false;
+    if (!source->property("qutebrowserKeychain").toString().isEmpty() ||
+        !source->property("qutebrowserCount").toString().isEmpty())
+        return false;
+
     const Qt::KeyboardModifiers modifiers = keyEvent->modifiers();
     if ((modifiers & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) ||
         !(modifiers & Qt::ShiftModifier))
@@ -370,6 +390,7 @@ static bool qutebrowserHandleLagIndependentNormalKey(QWidget *source, QEvent *ev
     if (tabBar)
         tabBar->setCurrentIndex(targetIndex);
     tabWidget->setCurrentIndex(targetIndex);
+    source->setProperty("qutebrowserSuppressNormalKeyReleaseKey", keyEvent->key());
     event->accept();
     return true;
 }
@@ -1134,6 +1155,11 @@ void QWebEngineViewPrivate::onQutebrowserModeChanged(const QString &oldMode, con
     m_qutebrowserMode = newMode;
     m_qutebrowserKeychain.clear();
     m_qutebrowserCount.clear();
+    if (m_webEngineWidget) {
+        m_webEngineWidget->setProperty("qutebrowserMode", m_qutebrowserMode);
+        m_webEngineWidget->setProperty("qutebrowserKeychain", m_qutebrowserKeychain);
+        m_webEngineWidget->setProperty("qutebrowserCount", m_qutebrowserCount);
+    }
     updateQutebrowserStatusOverlay();
 }
 
@@ -1143,6 +1169,11 @@ void QWebEngineViewPrivate::onQutebrowserStatusChanged(const QString &mode, cons
         m_qutebrowserMode = mode;
     m_qutebrowserKeychain = keychain;
     m_qutebrowserCount = count;
+    if (m_webEngineWidget) {
+        m_webEngineWidget->setProperty("qutebrowserMode", m_qutebrowserMode);
+        m_webEngineWidget->setProperty("qutebrowserKeychain", m_qutebrowserKeychain);
+        m_webEngineWidget->setProperty("qutebrowserCount", m_qutebrowserCount);
+    }
     updateQutebrowserStatusOverlay();
 }
 
@@ -1780,6 +1811,9 @@ void QWebEngineViewPrivate::widgetChanged(QtWebEngineCore::WebEngineQuickWidget 
         else
             q->layout()->addWidget(newWidget);
         m_webEngineWidget = newWidget;
+        m_webEngineWidget->setProperty("qutebrowserMode", m_qutebrowserMode);
+        m_webEngineWidget->setProperty("qutebrowserKeychain", m_qutebrowserKeychain);
+        m_webEngineWidget->setProperty("qutebrowserCount", m_qutebrowserCount);
         q->setFocusProxy(newWidget);
         if (hasFocus)
             newWidget->setFocus();
