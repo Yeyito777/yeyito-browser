@@ -46,6 +46,8 @@ class QLabel;
 class QLineEdit;
 class QMenu;
 class QPrinter;
+class QTabBar;
+class QTabWidget;
 class QWebEngineFindTextResult;
 class QWebEngineView;
 class QWidget;
@@ -104,6 +106,12 @@ public:
     bool isVisible() const override;
     QRect viewportRect() const override;
     bool qutebrowserHandleCommand(const QString &command) override;
+    QTabWidget *qutebrowserAncestorTabWidget(int *viewIndex = nullptr,
+                                             int *currentIndex = nullptr) const;
+    QTabBar *qutebrowserAncestorTabBar(QTabWidget *tabWidget) const;
+    bool qutebrowserSetCurrentTabIndex(int targetIndex);
+    bool qutebrowserMoveCurrentTab(int targetIndex);
+    bool qutebrowserHandleTabCommand(const QString &name, const QString &arguments);
     void ensureQutebrowserTabSidebar();
     void updateQutebrowserTabSidebar();
     int qutebrowserChromeLeftInset() const;

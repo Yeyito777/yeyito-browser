@@ -34,9 +34,13 @@
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QList>
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QStyle>
+#include <QStringList>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QGuiApplication>
 #include <QQuickWidget>
 #include <QtWidgets/private/qapplication_p.h>
@@ -650,6 +654,37 @@ static QutebrowserCmdSetTextPreset qutebrowserParseCmdSetTextPreset(const QStrin
     return preset;
 }
 
+static QStringList qutebrowserCommandArgumentTokens(const QString &arguments)
+{
+    return arguments.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+}
+
+static bool qutebrowserParseStrictInteger(const QString &token, int *value)
+{
+    if (token.isEmpty())
+        return false;
+
+    int index = 0;
+    if (token.at(index) == QLatin1Char('-')) {
+        if (token.size() == 1)
+            return false;
+        ++index;
+    }
+
+    for (; index < token.size(); ++index) {
+        if (!token.at(index).isDigit())
+            return false;
+    }
+
+    bool ok = false;
+    const int parsed = token.toInt(&ok);
+    if (!ok)
+        return false;
+    if (value)
+        *value = parsed;
+    return true;
+}
+
 static constexpr int qutebrowserNativeTabSidebarWidth = 175;
 
 void QWebEngineViewPrivate::ensureQutebrowserTabSidebar()
@@ -969,9 +1004,173 @@ void QWebEngineViewPrivate::onQutebrowserStatusChanged(const QString &mode, cons
     updateQutebrowserStatusOverlay();
 }
 
+QTabWidget *QWebEngineViewPrivate::qutebrowserAncestorTabWidget(int *viewIndex,
+                                                               int *currentIndex) const
+{
+    if (viewIndex)
+        *viewIndex = -1;
+    if (currentIndex)
+        *currentIndex = -1;
+
+    const QWidget *view = q_ptr;
+    if (!view)
+        return nullptr;
+
+    for (QWidget *candidate = q_ptr; candidate; candidate = candidate->parentWidget()) {
+        auto *tabWidget = qobject_cast<QTabWidget *>(candidate);
+        if (!tabWidget)
+            continue;
+
+        for (int index = 0; index < tabWidget->count(); ++index) {
+            QWidget *pageWidget = tabWidget->widget(index);
+            if (!pageWidget)
+                continue;
+            if (pageWidget == view || pageWidget->isAncestorOf(view)) {
+                if (viewIndex)
+                    *viewIndex = index;
+                if (currentIndex)
+                    *currentIndex = tabWidget->currentIndex();
+                return tabWidget;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+QTabBar *QWebEngineViewPrivate::qutebrowserAncestorTabBar(QTabWidget *tabWidget) const
+{
+    if (!tabWidget)
+        return nullptr;
+
+    const QList<QTabBar *> directBars = tabWidget->findChildren<QTabBar *>(QString(),
+                                                                          Qt::FindDirectChildrenOnly);
+    if (directBars.size() == 1)
+        return directBars.first();
+    if (directBars.size() > 1)
+        return nullptr;
+
+    const QList<QTabBar *> bars = tabWidget->findChildren<QTabBar *>();
+    return bars.size() == 1 ? bars.first() : nullptr;
+}
+
+bool QWebEngineViewPrivate::qutebrowserSetCurrentTabIndex(int targetIndex)
+{
+    int viewIndex = -1;
+    int currentIndex = -1;
+    QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, &currentIndex);
+    if (!tabWidget || viewIndex < 0 || currentIndex < 0 || viewIndex != currentIndex)
+        return false;
+    if (targetIndex < 0 || targetIndex >= tabWidget->count() || targetIndex == currentIndex)
+        return false;
+
+    tabWidget->setCurrentIndex(targetIndex);
+    return true;
+}
+
+bool QWebEngineViewPrivate::qutebrowserMoveCurrentTab(int targetIndex)
+{
+    int viewIndex = -1;
+    int currentIndex = -1;
+    QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, &currentIndex);
+    if (!tabWidget || viewIndex < 0 || currentIndex < 0 || viewIndex != currentIndex)
+        return false;
+    if (targetIndex < 0 || targetIndex >= tabWidget->count())
+        return false;
+
+    QTabBar *tabBar = qutebrowserAncestorTabBar(tabWidget);
+    if (!tabBar || tabBar->count() != tabWidget->count())
+        return false;
+    if (tabBar->currentIndex() >= 0 && tabBar->currentIndex() != currentIndex)
+        return false;
+
+    if (targetIndex != currentIndex)
+        tabBar->moveTab(currentIndex, targetIndex);
+    return true;
+}
+
+bool QWebEngineViewPrivate::qutebrowserHandleTabCommand(const QString &name,
+                                                        const QString &arguments)
+{
+    if (name != QStringLiteral("tab-next") && name != QStringLiteral("tab-prev") &&
+        name != QStringLiteral("tab-focus") && name != QStringLiteral("tab-move"))
+        return false;
+
+    int viewIndex = -1;
+    int currentIndex = -1;
+    QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, &currentIndex);
+    if (!tabWidget || viewIndex < 0 || currentIndex < 0 || viewIndex != currentIndex)
+        return false;
+
+    const int count = tabWidget->count();
+    const QStringList tokens = qutebrowserCommandArgumentTokens(arguments);
+
+    if (name == QStringLiteral("tab-next") || name == QStringLiteral("tab-prev")) {
+        if (!tokens.isEmpty())
+            return false;
+        const int delta = name == QStringLiteral("tab-next") ? 1 : -1;
+        const int targetIndex = currentIndex + delta;
+        if (targetIndex < 0 || targetIndex >= count)
+            return false;
+        return qutebrowserSetCurrentTabIndex(targetIndex);
+    }
+
+    if (name == QStringLiteral("tab-focus")) {
+        if (tokens.size() != 1)
+            return false;
+
+        int index = 0;
+        if (!qutebrowserParseStrictInteger(tokens.first(), &index))
+            return false;
+
+        int targetIndex = -1;
+        if (index == -1) {
+            targetIndex = count - 1;
+        } else if (index > 0) {
+            targetIndex = index - 1;
+        } else {
+            return false;
+        }
+
+        if (targetIndex < 0 || targetIndex >= count || targetIndex == currentIndex)
+            return false;
+        return qutebrowserSetCurrentTabIndex(targetIndex);
+    }
+
+    if (name == QStringLiteral("tab-move")) {
+        if (tokens.size() > 1)
+            return false;
+
+        int targetIndex = 0;
+        if (tokens.isEmpty() || tokens.first() == QStringLiteral("start")) {
+            targetIndex = 0;
+        } else if (tokens.first() == QStringLiteral("end")) {
+            targetIndex = count - 1;
+        } else if (tokens.first() == QStringLiteral("+")) {
+            targetIndex = currentIndex + 1;
+        } else if (tokens.first() == QStringLiteral("-")) {
+            targetIndex = currentIndex - 1;
+        } else {
+            int index = 0;
+            if (!qutebrowserParseStrictInteger(tokens.first(), &index) || index == 0)
+                return false;
+            targetIndex = index > 0 ? index - 1 : count + index;
+        }
+
+        if (targetIndex < 0 || targetIndex >= count)
+            return false;
+        return qutebrowserMoveCurrentTab(targetIndex);
+    }
+
+    return false;
+}
+
 bool QWebEngineViewPrivate::qutebrowserHandleCommand(const QString &command)
 {
     const QString name = qutebrowserCommandName(command);
+    if (qutebrowserHandleTabCommand(name, qutebrowserCommandArgument(command)))
+        return true;
+
     if (name == QStringLiteral("cmd-set-text")) {
         const QutebrowserCmdSetTextPreset preset =
                 qutebrowserParseCmdSetTextPreset(qutebrowserCommandArgument(command));
