@@ -474,11 +474,17 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
                                                                q, [this](bool) {
             m_qutebrowserLoading = false;
             m_qutebrowserLoadProgress = 100;
+            if (page) {
+                m_qutebrowserCanGoBack = page->history()->canGoBack();
+                m_qutebrowserCanGoForward = page->history()->canGoForward();
+            }
             updateQutebrowserStatusOverlay();
         });
         m_qutebrowserUrl = newPage->url();
         m_qutebrowserScrollPosition = newPage->scrollPosition();
         m_qutebrowserContentsSize = newPage->contentsSize();
+        m_qutebrowserCanGoBack = newPage->history()->canGoBack();
+        m_qutebrowserCanGoForward = newPage->history()->canGoForward();
         newPage->setVisible(q->isVisible());
     }
 
@@ -509,10 +515,14 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
         m_qutebrowserUrl = newPage->url();
         m_qutebrowserScrollPosition = newPage->scrollPosition();
         m_qutebrowserContentsSize = newPage->contentsSize();
+        m_qutebrowserCanGoBack = newPage->history()->canGoBack();
+        m_qutebrowserCanGoForward = newPage->history()->canGoForward();
     } else {
         m_qutebrowserUrl = QUrl();
         m_qutebrowserScrollPosition = QPointF();
         m_qutebrowserContentsSize = QSizeF();
+        m_qutebrowserCanGoBack = false;
+        m_qutebrowserCanGoForward = false;
     }
     m_qutebrowserHoveredUrl.clear();
     m_qutebrowserLoading = false;
@@ -607,6 +617,13 @@ void QWebEngineViewPrivate::updateQutebrowserStatusOverlay()
         rightText += (rightText.isEmpty() ? QString() : QStringLiteral(" ")) + QStringLiteral("[%1%]").arg(m_qutebrowserLoadProgress);
     if (!scrollText.isEmpty())
         rightText += (rightText.isEmpty() ? QString() : QStringLiteral(" ")) + scrollText;
+    QString historyText;
+    if (m_qutebrowserCanGoBack)
+        historyText += QChar(0x25C0);
+    if (m_qutebrowserCanGoForward)
+        historyText += QChar(0x25B6);
+    if (!historyText.isEmpty())
+        rightText += (rightText.isEmpty() ? QString() : QStringLiteral(" ")) + historyText;
 
     if (leftText.isEmpty() && rightText.isEmpty()) {
         m_qutebrowserStatusOverlay->hide();

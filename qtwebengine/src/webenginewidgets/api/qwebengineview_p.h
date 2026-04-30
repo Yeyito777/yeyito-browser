@@ -128,6 +128,8 @@ public:
     QSizeF m_qutebrowserContentsSize;
     int m_qutebrowserLoadProgress = 100;
     bool m_qutebrowserLoading = false;
+    bool m_qutebrowserCanGoBack = false;
+    bool m_qutebrowserCanGoForward = false;
     bool m_dragEntered;
     mutable bool m_ownsPage;
     QWebEngineContextMenuRequest *m_contextRequest;
