@@ -157,9 +157,7 @@ public:
     QMetaObject::Connection m_qutebrowserFindConnection;
     QPointer<QtWebEngineCore::WebEngineQuickWidget> m_webEngineWidget;
     QWidget *m_qutebrowserTabSidebar = nullptr;
-    QWidget *m_qutebrowserTabIndicator = nullptr;
-    QLabel *m_qutebrowserTabTitleLabel = nullptr;
-    QLabel *m_qutebrowserTabUrlLabel = nullptr;
+    QVBoxLayout *m_qutebrowserTabListLayout = nullptr;
     QLabel *m_qutebrowserStatusOverlay = nullptr;
     QWidget *m_qutebrowserFindOverlay = nullptr;
     QLabel *m_qutebrowserFindPrefixLabel = nullptr;

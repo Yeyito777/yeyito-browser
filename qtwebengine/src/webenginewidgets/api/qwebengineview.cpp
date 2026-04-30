@@ -687,6 +687,25 @@ static bool qutebrowserParseStrictInteger(const QString &token, int *value)
 
 static constexpr int qutebrowserNativeTabSidebarWidth = 175;
 
+static QString qutebrowserTabDisplayUrl(const QUrl &url)
+{
+    if (url.isEmpty())
+        return QStringLiteral("about:blank");
+    QString text = url.toDisplayString(QUrl::PreferLocalFile | QUrl::RemovePassword);
+    if (url.isLocalFile()) {
+        const QString path = url.toLocalFile();
+        const int slash = path.lastIndexOf(QLatin1Char('/'));
+        return slash >= 0 ? path.mid(slash + 1) : path;
+    }
+    if (text.startsWith(QStringLiteral("https://")))
+        text.remove(0, 8);
+    else if (text.startsWith(QStringLiteral("http://")))
+        text.remove(0, 7);
+    if (text.endsWith(QLatin1Char('/')))
+        text.chop(1);
+    return text;
+}
+
 void QWebEngineViewPrivate::ensureQutebrowserTabSidebar()
 {
     Q_Q(QWebEngineView);
@@ -699,58 +718,9 @@ void QWebEngineViewPrivate::ensureQutebrowserTabSidebar()
     sidebar->setFixedWidth(qutebrowserNativeTabSidebarWidth);
     sidebar->setFocusPolicy(Qt::NoFocus);
 
-    QFont font(QStringLiteral("JetBrains Mono"));
-    font.setStyleHint(QFont::Monospace);
-    font.setPointSize(9);
-    QFont titleFont(font);
-    titleFont.setBold(true);
-
     auto *layout = new QVBoxLayout(sidebar);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-
-    // First native tabs slice: intentionally a single current-page preview.
-    // Next integration point: replace this widget with a model-backed native
-    // tab list once Python TabbedBrowser/session state is exposed to Chromium.
-    auto *tab = new QWidget(sidebar);
-    tab->setObjectName(QStringLiteral("QutebrowserChromeSelectedTab"));
-    tab->setFocusPolicy(Qt::NoFocus);
-    tab->setMinimumHeight(54);
-    tab->setMaximumHeight(72);
-
-    auto *tabLayout = new QHBoxLayout(tab);
-    tabLayout->setContentsMargins(0, 0, 8, 0);
-    tabLayout->setSpacing(6);
-
-    auto *indicator = new QWidget(tab);
-    indicator->setObjectName(QStringLiteral("QutebrowserChromeTabIndicator"));
-    indicator->setFixedWidth(3);
-    indicator->setFocusPolicy(Qt::NoFocus);
-
-    auto *textLayout = new QVBoxLayout;
-    textLayout->setContentsMargins(0, 6, 0, 6);
-    textLayout->setSpacing(2);
-
-    auto *title = new QLabel(tab);
-    title->setObjectName(QStringLiteral("QutebrowserChromeTabTitle"));
-    title->setTextFormat(Qt::PlainText);
-    title->setFont(titleFont);
-    title->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    title->setFocusPolicy(Qt::NoFocus);
-
-    auto *url = new QLabel(tab);
-    url->setObjectName(QStringLiteral("QutebrowserChromeTabUrl"));
-    url->setTextFormat(Qt::PlainText);
-    url->setFont(font);
-    url->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    url->setFocusPolicy(Qt::NoFocus);
-
-    textLayout->addWidget(title);
-    textLayout->addWidget(url);
-    tabLayout->addWidget(indicator);
-    tabLayout->addLayout(textLayout, 1);
-
-    layout->addWidget(tab);
     layout->addStretch(1);
 
     sidebar->setStyleSheet(QStringLiteral(
@@ -758,12 +728,8 @@ void QWebEngineViewPrivate::ensureQutebrowserTabSidebar()
             "  background: #000a1a; color: #cce7ff;"
             "  border-right: 1px solid #001020;"
             "}"
-            "QWidget#QutebrowserChromeSelectedTab {"
-            "  background: #1d9bf0; color: #ffffff; border: 0px;"
-            "}"
-            "QLabel#QutebrowserChromeTabTitle { color: #ffffff; }"
-            "QLabel#QutebrowserChromeTabUrl { color: #ffffff; }"
-            "QWidget#QutebrowserChromeTabIndicator { background: transparent; }"));
+            "QLabel { background: #001020; color: #cce7ff; padding: 2px 6px; border: 0px; }"
+            "QLabel[selected=\"true\"] { background: #1d9bf0; color: #ffffff; }"));
 
     if (auto *boxLayout = qobject_cast<QBoxLayout *>(q->layout()))
         boxLayout->insertWidget(0, sidebar);
@@ -771,9 +737,7 @@ void QWebEngineViewPrivate::ensureQutebrowserTabSidebar()
         q->layout()->addWidget(sidebar);
 
     m_qutebrowserTabSidebar = sidebar;
-    m_qutebrowserTabIndicator = indicator;
-    m_qutebrowserTabTitleLabel = title;
-    m_qutebrowserTabUrlLabel = url;
+    m_qutebrowserTabListLayout = layout;
     updateQutebrowserTabSidebar();
 }
 
@@ -787,31 +751,51 @@ void QWebEngineViewPrivate::updateQutebrowserTabSidebar()
     }
 
     m_qutebrowserTabSidebar->show();
+    if (!m_qutebrowserTabListLayout)
+        return;
 
-    const QUrl currentUrl = page->url();
-    QString title = page->title();
-    QString urlText = currentUrl.toDisplayString(QUrl::PreferLocalFile | QUrl::RemovePassword);
-    if (title.isEmpty())
-        title = urlText.isEmpty() ? QStringLiteral("New tab") : urlText;
-    if (urlText.isEmpty())
-        urlText = QStringLiteral("about:blank");
-    if (m_qutebrowserLoading && m_qutebrowserLoadProgress < 100)
-        urlText = QStringLiteral("%1  %2%").arg(urlText).arg(m_qutebrowserLoadProgress);
-
-    const int textWidth = qMax(20, qutebrowserNativeTabSidebarWidth - 22);
-    if (m_qutebrowserTabTitleLabel) {
-        const QFontMetrics metrics(m_qutebrowserTabTitleLabel->font());
-        m_qutebrowserTabTitleLabel->setText(metrics.elidedText(title, Qt::ElideRight, textWidth));
-    }
-    if (m_qutebrowserTabUrlLabel) {
-        const QFontMetrics metrics(m_qutebrowserTabUrlLabel->font());
-        m_qutebrowserTabUrlLabel->setText(metrics.elidedText(urlText, Qt::ElideMiddle, textWidth));
+    while (m_qutebrowserTabListLayout->count() > 1) {
+        QLayoutItem *item = m_qutebrowserTabListLayout->takeAt(0);
+        if (QWidget *widget = item ? item->widget() : nullptr)
+            widget->deleteLater();
+        delete item;
     }
 
-    if (m_qutebrowserTabIndicator) {
-        m_qutebrowserTabIndicator->setStyleSheet(m_qutebrowserLoading
-                ? QStringLiteral("background: #0070b8;")
-                : QStringLiteral("background: transparent;"));
+    QFont font(QStringLiteral("JetBrains Mono"));
+    font.setStyleHint(QFont::Monospace);
+    font.setPointSize(9);
+
+    int viewIndex = -1;
+    int currentIndex = -1;
+    QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, &currentIndex);
+    const int tabCount = tabWidget ? tabWidget->count() : 1;
+    const int selected = currentIndex >= 0 ? currentIndex : 0;
+    const int textWidth = qMax(20, qutebrowserNativeTabSidebarWidth - 12);
+
+    for (int i = 0; i < tabCount; ++i) {
+        QWebEnginePage *tabPage = nullptr;
+        if (tabWidget) {
+            if (auto *view = tabWidget->widget(i)->findChild<QWebEngineView *>())
+                tabPage = view->page();
+        } else {
+            tabPage = page;
+        }
+        QString text = qutebrowserTabDisplayUrl(tabPage ? tabPage->url() : QUrl());
+        if (tabPage && tabPage->isLoading())
+            text += QStringLiteral("  %1%").arg(tabPage == page ? m_qutebrowserLoadProgress : 0);
+        text = QStringLiteral("%1 %2").arg(i + 1).arg(text);
+
+        auto *label = new QLabel(m_qutebrowserTabSidebar);
+        label->setTextFormat(Qt::PlainText);
+        label->setFont(font);
+        label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        label->setFocusPolicy(Qt::NoFocus);
+        label->setWordWrap(false);
+        label->setFixedHeight(22);
+        label->setText(QFontMetrics(font).elidedText(text, Qt::ElideRight, textWidth));
+        label->setProperty("selected", i == selected);
+        label->setStyleSheet(QString());
+        m_qutebrowserTabListLayout->insertWidget(i, label);
     }
 }
 
