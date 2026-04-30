@@ -2413,7 +2413,7 @@ tabs.select_on_remove:
   desc: Which tab to select when the focused tab is removed.
 
 tabs.show:
-  default: always
+  default: never
   type:
     name: String
     valid_values:

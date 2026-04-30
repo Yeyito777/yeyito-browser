@@ -104,6 +104,9 @@ public:
     bool isVisible() const override;
     QRect viewportRect() const override;
     bool qutebrowserHandleCommand(const QString &command) override;
+    void ensureQutebrowserTabSidebar();
+    void updateQutebrowserTabSidebar();
+    int qutebrowserChromeLeftInset() const;
     void ensureQutebrowserStatusOverlay();
     void updateQutebrowserStatusOverlay();
     void positionQutebrowserStatusOverlay();
@@ -135,6 +138,7 @@ public:
     QMetaObject::Connection m_pageConnection;
     QMetaObject::Connection m_qutebrowserModeConnection;
     QMetaObject::Connection m_qutebrowserStatusConnection;
+    QMetaObject::Connection m_qutebrowserTitleConnection;
     QMetaObject::Connection m_qutebrowserUrlConnection;
     QMetaObject::Connection m_qutebrowserLinkConnection;
     QMetaObject::Connection m_qutebrowserScrollConnection;
@@ -143,6 +147,11 @@ public:
     QMetaObject::Connection m_qutebrowserLoadProgressConnection;
     QMetaObject::Connection m_qutebrowserLoadFinishedConnection;
     QMetaObject::Connection m_qutebrowserFindConnection;
+    QPointer<QtWebEngineCore::WebEngineQuickWidget> m_webEngineWidget;
+    QWidget *m_qutebrowserTabSidebar = nullptr;
+    QWidget *m_qutebrowserTabIndicator = nullptr;
+    QLabel *m_qutebrowserTabTitleLabel = nullptr;
+    QLabel *m_qutebrowserTabUrlLabel = nullptr;
     QLabel *m_qutebrowserStatusOverlay = nullptr;
     QWidget *m_qutebrowserFindOverlay = nullptr;
     QLabel *m_qutebrowserFindPrefixLabel = nullptr;

@@ -4498,7 +4498,7 @@ Valid values:
  * +multiple+: Hide the tab bar if only one tab is open.
  * +switching+: Show the tab bar when switching tabs.
 
-Default: +pass:[always]+
+Default: +pass:[never]+
 
 [[tabs.show_switching_delay]]
 === tabs.show_switching_delay
