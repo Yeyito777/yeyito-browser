@@ -297,6 +297,83 @@ void WebEngineQuickWidget::removeParentBeforeParentDelete()
         close();
 }
 
+static QTabWidget *qutebrowserFindAncestorTabWidget(QWidget *source, int *viewIndex = nullptr)
+{
+    if (viewIndex)
+        *viewIndex = -1;
+    if (!source)
+        return nullptr;
+
+    for (QWidget *candidate = source; candidate; candidate = candidate->parentWidget()) {
+        auto *tabWidget = qobject_cast<QTabWidget *>(candidate);
+        if (!tabWidget)
+            continue;
+        for (int index = 0; index < tabWidget->count(); ++index) {
+            QWidget *pageWidget = tabWidget->widget(index);
+            if (pageWidget && (pageWidget == source || pageWidget->isAncestorOf(source))) {
+                if (viewIndex)
+                    *viewIndex = index;
+                return tabWidget;
+            }
+        }
+    }
+    return nullptr;
+}
+
+static QTabBar *qutebrowserFindSingleTabBar(QTabWidget *tabWidget)
+{
+    if (!tabWidget)
+        return nullptr;
+    const QList<QTabBar *> directBars = tabWidget->findChildren<QTabBar *>(QString(),
+                                                                          Qt::FindDirectChildrenOnly);
+    if (directBars.size() == 1)
+        return directBars.first();
+    if (directBars.size() > 1)
+        return nullptr;
+    const QList<QTabBar *> bars = tabWidget->findChildren<QTabBar *>();
+    return bars.size() == 1 ? bars.first() : nullptr;
+}
+
+static bool qutebrowserHandleLagIndependentNormalKey(QWidget *source, QEvent *event, bool editableFocused)
+{
+    if (editableFocused || event->type() != QEvent::KeyPress)
+        return false;
+
+    auto *keyEvent = static_cast<QKeyEvent *>(event);
+    const Qt::KeyboardModifiers modifiers = keyEvent->modifiers();
+    if ((modifiers & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) ||
+        !(modifiers & Qt::ShiftModifier))
+        return false;
+
+    int delta = 0;
+    if (keyEvent->key() == Qt::Key_J)
+        delta = 1;
+    else if (keyEvent->key() == Qt::Key_K)
+        delta = -1;
+    else
+        return false;
+
+    int viewIndex = -1;
+    QTabWidget *tabWidget = qutebrowserFindAncestorTabWidget(source, &viewIndex);
+    if (!tabWidget || viewIndex < 0 || viewIndex != tabWidget->currentIndex())
+        return false;
+
+    QTabBar *tabBar = qutebrowserFindSingleTabBar(tabWidget);
+    int currentIndex = tabBar && tabBar->currentIndex() >= 0
+            ? tabBar->currentIndex()
+            : tabWidget->currentIndex();
+    const int count = tabBar ? tabBar->count() : tabWidget->count();
+    const int targetIndex = currentIndex + delta;
+    if (targetIndex < 0 || targetIndex >= count)
+        return false;
+
+    if (tabBar)
+        tabBar->setCurrentIndex(targetIndex);
+    tabWidget->setCurrentIndex(targetIndex);
+    event->accept();
+    return true;
+}
+
 bool WebEngineQuickWidget::event(QEvent *event)
 {
     bool handled = false;
@@ -334,6 +411,9 @@ bool WebEngineQuickWidget::event(QEvent *event)
             break;
         }
     }
+
+    if (qutebrowserHandleLagIndependentNormalKey(this, event, inputMethodQuery(Qt::ImEnabled).toBool()))
+        return true;
 
     switch (event->type()) {
     case QEvent::FocusIn:
@@ -734,10 +814,10 @@ void QWebEngineViewPrivate::ensureQutebrowserTabSidebar()
             "}"
             "QWidget#QutebrowserChromeTabRow { background: #001020; border: 0px; }"
             "QWidget#QutebrowserChromeTabRow[selected=\"true\"] { background: #1d9bf0; }"
+            "QLabel#QutebrowserChromeTabNumber { background: transparent; color: #cce7ff; padding: 0px; border: 0px; }"
             "QLabel#QutebrowserChromeTabText { background: transparent; color: #cce7ff; padding: 0px; border: 0px; }"
-            "QWidget#QutebrowserChromeTabRow[selected=\"true\"] QLabel#QutebrowserChromeTabText { color: #ffffff; }"
-            "QLabel#QutebrowserChromeTabIcon { background: transparent; padding: 0px; border: 0px; }"
-            "QWidget#QutebrowserChromeTabIndicator { background: transparent; border: 0px; }"));
+            "QWidget#QutebrowserChromeTabRow[selected=\"true\"] QLabel { color: #ffffff; }"
+            "QLabel#QutebrowserChromeTabIcon { background: transparent; padding: 0px; border: 0px; }"));
 
     if (auto *boxLayout = qobject_cast<QBoxLayout *>(q->layout()))
         boxLayout->insertWidget(0, sidebar);
@@ -805,7 +885,8 @@ void QWebEngineViewPrivate::updateQutebrowserTabSidebar()
 
     const int tabCount = tabBar ? tabBar->count() : (tabWidget ? tabWidget->count() : 1);
     const int selected = currentIndex >= 0 ? currentIndex : 0;
-    const int textWidth = qMax(20, qutebrowserNativeTabSidebarWidth - 5 - 3 - 4 - iconExtent - 4 - 5);
+    const int numberWidth = metrics.horizontalAdvance(QString::number(qMax(1, tabCount))) + 2;
+    const int textWidth = qMax(20, qutebrowserNativeTabSidebarWidth - 10 - numberWidth - 4 - (iconExtent + 4) - 4);
 
     while (m_qutebrowserTabListLayout->count() > 1) {
         QLayoutItem *item = m_qutebrowserTabListLayout->takeAt(0);
@@ -825,7 +906,7 @@ void QWebEngineViewPrivate::updateQutebrowserTabSidebar()
             tabPage = page;
         }
 
-        QString text = QStringLiteral("%1 %2").arg(i + 1).arg(qutebrowserTabDisplayUrl(tabPage ? tabPage->url() : QUrl()));
+        QString text = qutebrowserTabDisplayUrl(tabPage ? tabPage->url() : QUrl());
         text = metrics.elidedText(text, Qt::ElideRight, textWidth);
 
         auto *row = new QWidget(m_qutebrowserTabSidebar);
@@ -838,10 +919,14 @@ void QWebEngineViewPrivate::updateQutebrowserTabSidebar()
         rowLayout->setContentsMargins(5, 0, 5, 0);
         rowLayout->setSpacing(0);
 
-        auto *indicator = new QWidget(row);
-        indicator->setObjectName(QStringLiteral("QutebrowserChromeTabIndicator"));
-        indicator->setFixedWidth(3);
-        indicator->setFocusPolicy(Qt::NoFocus);
+        auto *numberLabel = new QLabel(row);
+        numberLabel->setObjectName(QStringLiteral("QutebrowserChromeTabNumber"));
+        numberLabel->setTextFormat(Qt::PlainText);
+        numberLabel->setFont(font);
+        numberLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        numberLabel->setFocusPolicy(Qt::NoFocus);
+        numberLabel->setFixedWidth(numberWidth);
+        numberLabel->setText(QString::number(i + 1));
 
         auto *iconLabel = new QLabel(row);
         iconLabel->setObjectName(QStringLiteral("QutebrowserChromeTabIcon"));
@@ -863,7 +948,7 @@ void QWebEngineViewPrivate::updateQutebrowserTabSidebar()
         textLabel->setWordWrap(false);
         textLabel->setText(text);
 
-        rowLayout->addWidget(indicator);
+        rowLayout->addWidget(numberLabel);
         rowLayout->addSpacing(4);
         rowLayout->addWidget(iconLabel);
         rowLayout->addSpacing(4);
