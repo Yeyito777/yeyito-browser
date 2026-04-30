@@ -33,6 +33,7 @@
 #include <QKeyEvent>
 #include <QIcon>
 #include <QLabel>
+#include <QPixmap>
 #include <QLineEdit>
 #include <QList>
 #include <QShortcut>
@@ -414,6 +415,7 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
         QObject::disconnect(m_qutebrowserModeConnection);
         QObject::disconnect(m_qutebrowserStatusConnection);
         QObject::disconnect(m_qutebrowserTitleConnection);
+        QObject::disconnect(m_qutebrowserIconConnection);
         QObject::disconnect(m_qutebrowserUrlConnection);
         QObject::disconnect(m_qutebrowserLinkConnection);
         QObject::disconnect(m_qutebrowserScrollConnection);
@@ -425,6 +427,7 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
         m_qutebrowserModeConnection = {};
         m_qutebrowserStatusConnection = {};
         m_qutebrowserTitleConnection = {};
+        m_qutebrowserIconConnection = {};
         m_qutebrowserUrlConnection = {};
         m_qutebrowserLinkConnection = {};
         m_qutebrowserScrollConnection = {};
@@ -457,6 +460,10 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
                                                        q, [this](const QString &) {
             updateQutebrowserTabSidebar();
         });
+        m_qutebrowserIconConnection = QObject::connect(newPage, &QWebEnginePage::iconChanged,
+                                                      q, [this](const QIcon &) {
+            updateQutebrowserTabSidebar();
+        });
         m_qutebrowserUrlConnection = QObject::connect(newPage, &QWebEnginePage::urlChanged,
                                                       q, [this](const QUrl &url) {
             m_qutebrowserUrl = url;
@@ -482,14 +489,12 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
                                                               q, [this]() {
             m_qutebrowserLoading = true;
             m_qutebrowserLoadProgress = 0;
-            updateQutebrowserTabSidebar();
             updateQutebrowserStatusOverlay();
         });
         m_qutebrowserLoadProgressConnection = QObject::connect(newPage, &QWebEnginePage::loadProgress,
                                                                q, [this](int progress) {
             m_qutebrowserLoading = progress < 100;
             m_qutebrowserLoadProgress = progress;
-            updateQutebrowserTabSidebar();
             updateQutebrowserStatusOverlay();
         });
         m_qutebrowserLoadFinishedConnection = QObject::connect(newPage, &QWebEnginePage::loadFinished,
@@ -500,7 +505,6 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
                 m_qutebrowserCanGoBack = page->history()->canGoBack();
                 m_qutebrowserCanGoForward = page->history()->canGoForward();
             }
-            updateQutebrowserTabSidebar();
             updateQutebrowserStatusOverlay();
         });
         m_qutebrowserFindConnection = QObject::connect(newPage, &QWebEnginePage::findTextFinished,
@@ -728,8 +732,12 @@ void QWebEngineViewPrivate::ensureQutebrowserTabSidebar()
             "  background: #000a1a; color: #cce7ff;"
             "  border-right: 1px solid #001020;"
             "}"
-            "QLabel { background: #001020; color: #cce7ff; padding: 2px 6px; border: 0px; }"
-            "QLabel[selected=\"true\"] { background: #1d9bf0; color: #ffffff; }"));
+            "QWidget#QutebrowserChromeTabRow { background: #001020; border: 0px; }"
+            "QWidget#QutebrowserChromeTabRow[selected=\"true\"] { background: #1d9bf0; }"
+            "QLabel#QutebrowserChromeTabText { background: transparent; color: #cce7ff; padding: 0px; border: 0px; }"
+            "QWidget#QutebrowserChromeTabRow[selected=\"true\"] QLabel#QutebrowserChromeTabText { color: #ffffff; }"
+            "QLabel#QutebrowserChromeTabIcon { background: transparent; padding: 0px; border: 0px; }"
+            "QWidget#QutebrowserChromeTabIndicator { background: transparent; border: 0px; }"));
 
     if (auto *boxLayout = qobject_cast<QBoxLayout *>(q->layout()))
         boxLayout->insertWidget(0, sidebar);
@@ -739,6 +747,33 @@ void QWebEngineViewPrivate::ensureQutebrowserTabSidebar()
     m_qutebrowserTabSidebar = sidebar;
     m_qutebrowserTabListLayout = layout;
     updateQutebrowserTabSidebar();
+}
+
+void QWebEngineViewPrivate::updateQutebrowserTabModelConnections(QTabWidget *tabWidget, QTabBar *tabBar)
+{
+    Q_Q(QWebEngineView);
+    if (m_qutebrowserTabWidget == tabWidget && m_qutebrowserTabBar == tabBar)
+        return;
+
+    QObject::disconnect(m_qutebrowserTabCurrentConnection);
+    QObject::disconnect(m_qutebrowserTabMovedConnection);
+    m_qutebrowserTabCurrentConnection = {};
+    m_qutebrowserTabMovedConnection = {};
+    m_qutebrowserTabWidget = tabWidget;
+    m_qutebrowserTabBar = tabBar;
+
+    if (tabWidget) {
+        m_qutebrowserTabCurrentConnection = QObject::connect(tabWidget, &QTabWidget::currentChanged,
+                                                             q, [this](int) {
+            updateQutebrowserTabSidebar();
+        });
+    }
+    if (tabBar) {
+        m_qutebrowserTabMovedConnection = QObject::connect(tabBar, &QTabBar::tabMoved,
+                                                           q, [this](int, int) {
+            updateQutebrowserTabSidebar();
+        });
+    }
 }
 
 void QWebEngineViewPrivate::updateQutebrowserTabSidebar()
@@ -754,6 +789,24 @@ void QWebEngineViewPrivate::updateQutebrowserTabSidebar()
     if (!m_qutebrowserTabListLayout)
         return;
 
+    QFont font(QStringLiteral("JetBrains Mono"));
+    font.setStyleHint(QFont::Monospace);
+    font.setPointSize(9);
+    const QFontMetrics metrics(font);
+    const int iconExtent = qMax(10, metrics.height() - 2);
+
+    int viewIndex = -1;
+    int currentIndex = -1;
+    QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, &currentIndex);
+    QTabBar *tabBar = qutebrowserAncestorTabBar(tabWidget);
+    if (tabBar && tabBar->currentIndex() >= 0)
+        currentIndex = tabBar->currentIndex();
+    updateQutebrowserTabModelConnections(tabWidget, tabBar);
+
+    const int tabCount = tabBar ? tabBar->count() : (tabWidget ? tabWidget->count() : 1);
+    const int selected = currentIndex >= 0 ? currentIndex : 0;
+    const int textWidth = qMax(20, qutebrowserNativeTabSidebarWidth - 5 - 3 - 4 - iconExtent - 4 - 5);
+
     while (m_qutebrowserTabListLayout->count() > 1) {
         QLayoutItem *item = m_qutebrowserTabListLayout->takeAt(0);
         if (QWidget *widget = item ? item->widget() : nullptr)
@@ -761,41 +814,61 @@ void QWebEngineViewPrivate::updateQutebrowserTabSidebar()
         delete item;
     }
 
-    QFont font(QStringLiteral("JetBrains Mono"));
-    font.setStyleHint(QFont::Monospace);
-    font.setPointSize(9);
-
-    int viewIndex = -1;
-    int currentIndex = -1;
-    QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, &currentIndex);
-    const int tabCount = tabWidget ? tabWidget->count() : 1;
-    const int selected = currentIndex >= 0 ? currentIndex : 0;
-    const int textWidth = qMax(20, qutebrowserNativeTabSidebarWidth - 12);
-
     for (int i = 0; i < tabCount; ++i) {
         QWebEnginePage *tabPage = nullptr;
-        if (tabWidget) {
-            if (auto *view = tabWidget->widget(i)->findChild<QWebEngineView *>())
-                tabPage = view->page();
+        if (tabWidget && i < tabWidget->count()) {
+            if (QWidget *tabWidgetPage = tabWidget->widget(i)) {
+                if (auto *view = tabWidgetPage->findChild<QWebEngineView *>())
+                    tabPage = view->page();
+            }
         } else {
             tabPage = page;
         }
-        QString text = qutebrowserTabDisplayUrl(tabPage ? tabPage->url() : QUrl());
-        if (tabPage && tabPage->isLoading())
-            text += QStringLiteral("  %1%").arg(tabPage == page ? m_qutebrowserLoadProgress : 0);
-        text = QStringLiteral("%1 %2").arg(i + 1).arg(text);
 
-        auto *label = new QLabel(m_qutebrowserTabSidebar);
-        label->setTextFormat(Qt::PlainText);
-        label->setFont(font);
-        label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-        label->setFocusPolicy(Qt::NoFocus);
-        label->setWordWrap(false);
-        label->setFixedHeight(22);
-        label->setText(QFontMetrics(font).elidedText(text, Qt::ElideRight, textWidth));
-        label->setProperty("selected", i == selected);
-        label->setStyleSheet(QString());
-        m_qutebrowserTabListLayout->insertWidget(i, label);
+        QString text = QStringLiteral("%1 %2").arg(i + 1).arg(qutebrowserTabDisplayUrl(tabPage ? tabPage->url() : QUrl()));
+        text = metrics.elidedText(text, Qt::ElideRight, textWidth);
+
+        auto *row = new QWidget(m_qutebrowserTabSidebar);
+        row->setObjectName(QStringLiteral("QutebrowserChromeTabRow"));
+        row->setFocusPolicy(Qt::NoFocus);
+        row->setFixedHeight(qMax(18, metrics.height() + 2));
+        row->setProperty("selected", i == selected);
+
+        auto *rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(5, 0, 5, 0);
+        rowLayout->setSpacing(0);
+
+        auto *indicator = new QWidget(row);
+        indicator->setObjectName(QStringLiteral("QutebrowserChromeTabIndicator"));
+        indicator->setFixedWidth(3);
+        indicator->setFocusPolicy(Qt::NoFocus);
+
+        auto *iconLabel = new QLabel(row);
+        iconLabel->setObjectName(QStringLiteral("QutebrowserChromeTabIcon"));
+        iconLabel->setFocusPolicy(Qt::NoFocus);
+        iconLabel->setAlignment(Qt::AlignCenter);
+        iconLabel->setFixedSize(iconExtent + 4, iconExtent);
+        QIcon icon = tabBar ? tabBar->tabIcon(i) : QIcon();
+        if (icon.isNull() && tabPage)
+            icon = tabPage->icon();
+        if (!icon.isNull())
+            iconLabel->setPixmap(icon.pixmap(iconExtent, iconExtent));
+
+        auto *textLabel = new QLabel(row);
+        textLabel->setObjectName(QStringLiteral("QutebrowserChromeTabText"));
+        textLabel->setTextFormat(Qt::PlainText);
+        textLabel->setFont(font);
+        textLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        textLabel->setFocusPolicy(Qt::NoFocus);
+        textLabel->setWordWrap(false);
+        textLabel->setText(text);
+
+        rowLayout->addWidget(indicator);
+        rowLayout->addSpacing(4);
+        rowLayout->addWidget(iconLabel);
+        rowLayout->addSpacing(4);
+        rowLayout->addWidget(textLabel, 1);
+        m_qutebrowserTabListLayout->insertWidget(i, row);
     }
 }
 
@@ -1043,11 +1116,19 @@ bool QWebEngineViewPrivate::qutebrowserSetCurrentTabIndex(int targetIndex)
     int viewIndex = -1;
     int currentIndex = -1;
     QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, &currentIndex);
-    if (!tabWidget || viewIndex < 0 || currentIndex < 0 || viewIndex != currentIndex)
-        return false;
-    if (targetIndex < 0 || targetIndex >= tabWidget->count() || targetIndex == currentIndex)
+    if (!tabWidget || viewIndex < 0 || currentIndex < 0 || viewIndex != tabWidget->currentIndex())
         return false;
 
+    QTabBar *tabBar = qutebrowserAncestorTabBar(tabWidget);
+    if (tabBar && tabBar->currentIndex() >= 0)
+        currentIndex = tabBar->currentIndex();
+
+    const int count = tabBar ? tabBar->count() : tabWidget->count();
+    if (targetIndex < 0 || targetIndex >= count || targetIndex == currentIndex)
+        return false;
+
+    if (tabBar)
+        tabBar->setCurrentIndex(targetIndex);
     tabWidget->setCurrentIndex(targetIndex);
     return true;
 }
@@ -1057,15 +1138,16 @@ bool QWebEngineViewPrivate::qutebrowserMoveCurrentTab(int targetIndex)
     int viewIndex = -1;
     int currentIndex = -1;
     QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, &currentIndex);
-    if (!tabWidget || viewIndex < 0 || currentIndex < 0 || viewIndex != currentIndex)
-        return false;
-    if (targetIndex < 0 || targetIndex >= tabWidget->count())
+    if (!tabWidget || viewIndex < 0 || currentIndex < 0 || viewIndex != tabWidget->currentIndex())
         return false;
 
     QTabBar *tabBar = qutebrowserAncestorTabBar(tabWidget);
     if (!tabBar || tabBar->count() != tabWidget->count())
         return false;
-    if (tabBar->currentIndex() >= 0 && tabBar->currentIndex() != currentIndex)
+    if (tabBar->currentIndex() >= 0)
+        currentIndex = tabBar->currentIndex();
+
+    if (targetIndex < 0 || targetIndex >= tabBar->count())
         return false;
 
     if (targetIndex != currentIndex)
@@ -1083,10 +1165,14 @@ bool QWebEngineViewPrivate::qutebrowserHandleTabCommand(const QString &name,
     int viewIndex = -1;
     int currentIndex = -1;
     QTabWidget *tabWidget = qutebrowserAncestorTabWidget(&viewIndex, &currentIndex);
-    if (!tabWidget || viewIndex < 0 || currentIndex < 0 || viewIndex != currentIndex)
+    if (!tabWidget || viewIndex < 0 || currentIndex < 0 || viewIndex != tabWidget->currentIndex())
         return false;
 
-    const int count = tabWidget->count();
+    QTabBar *tabBar = qutebrowserAncestorTabBar(tabWidget);
+    if (tabBar && tabBar->currentIndex() >= 0)
+        currentIndex = tabBar->currentIndex();
+
+    const int count = tabBar ? tabBar->count() : tabWidget->count();
     const QStringList tokens = qutebrowserCommandArgumentTokens(arguments);
 
     if (name == QStringLiteral("tab-next") || name == QStringLiteral("tab-prev")) {
