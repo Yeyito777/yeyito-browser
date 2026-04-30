@@ -21,6 +21,9 @@
 #include "render_view_context_menu_qt.h"
 
 #include <QtCore/qpointer.h>
+#include <QtCore/qsize.h>
+#include <QtCore/qpoint.h>
+#include <QtCore/qurl.h>
 
 namespace QtWebEngineCore {
 class AutofillPopupController;
@@ -102,14 +105,29 @@ public:
     void positionQutebrowserStatusOverlay();
     void onQutebrowserModeChanged(const QString &oldMode, const QString &newMode);
     void onQutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count);
+    QString qutebrowserScrollText() const;
+    QString qutebrowserUrlText() const;
     QWebEnginePage *page;
     QMetaObject::Connection m_pageConnection;
     QMetaObject::Connection m_qutebrowserModeConnection;
     QMetaObject::Connection m_qutebrowserStatusConnection;
+    QMetaObject::Connection m_qutebrowserUrlConnection;
+    QMetaObject::Connection m_qutebrowserLinkConnection;
+    QMetaObject::Connection m_qutebrowserScrollConnection;
+    QMetaObject::Connection m_qutebrowserContentsConnection;
+    QMetaObject::Connection m_qutebrowserLoadStartedConnection;
+    QMetaObject::Connection m_qutebrowserLoadProgressConnection;
+    QMetaObject::Connection m_qutebrowserLoadFinishedConnection;
     QLabel *m_qutebrowserStatusOverlay = nullptr;
     QString m_qutebrowserMode = QStringLiteral("normal");
     QString m_qutebrowserKeychain;
     QString m_qutebrowserCount;
+    QUrl m_qutebrowserUrl;
+    QString m_qutebrowserHoveredUrl;
+    QPointF m_qutebrowserScrollPosition;
+    QSizeF m_qutebrowserContentsSize;
+    int m_qutebrowserLoadProgress = 100;
+    bool m_qutebrowserLoading = false;
     bool m_dragEntered;
     mutable bool m_ownsPage;
     QWebEngineContextMenuRequest *m_contextRequest;

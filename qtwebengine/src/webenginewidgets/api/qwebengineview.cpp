@@ -402,8 +402,22 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
         QObject::disconnect(oldPage, &QWebEnginePage::renderProcessTerminated, q, &QWebEngineView::renderProcessTerminated);
         QObject::disconnect(m_qutebrowserModeConnection);
         QObject::disconnect(m_qutebrowserStatusConnection);
+        QObject::disconnect(m_qutebrowserUrlConnection);
+        QObject::disconnect(m_qutebrowserLinkConnection);
+        QObject::disconnect(m_qutebrowserScrollConnection);
+        QObject::disconnect(m_qutebrowserContentsConnection);
+        QObject::disconnect(m_qutebrowserLoadStartedConnection);
+        QObject::disconnect(m_qutebrowserLoadProgressConnection);
+        QObject::disconnect(m_qutebrowserLoadFinishedConnection);
         m_qutebrowserModeConnection = {};
         m_qutebrowserStatusConnection = {};
+        m_qutebrowserUrlConnection = {};
+        m_qutebrowserLinkConnection = {};
+        m_qutebrowserScrollConnection = {};
+        m_qutebrowserContentsConnection = {};
+        m_qutebrowserLoadStartedConnection = {};
+        m_qutebrowserLoadProgressConnection = {};
+        m_qutebrowserLoadFinishedConnection = {};
     }
 
     if (newPage) {
@@ -424,6 +438,47 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
                                                          q, [this](const QString &mode, const QString &keychain, const QString &count) {
             onQutebrowserStatusChanged(mode, keychain, count);
         });
+        m_qutebrowserUrlConnection = QObject::connect(newPage, &QWebEnginePage::urlChanged,
+                                                      q, [this](const QUrl &url) {
+            m_qutebrowserUrl = url;
+            updateQutebrowserStatusOverlay();
+        });
+        m_qutebrowserLinkConnection = QObject::connect(newPage, &QWebEnginePage::linkHovered,
+                                                       q, [this](const QString &url) {
+            m_qutebrowserHoveredUrl = url;
+            updateQutebrowserStatusOverlay();
+        });
+        m_qutebrowserScrollConnection = QObject::connect(newPage, &QWebEnginePage::scrollPositionChanged,
+                                                         q, [this](const QPointF &position) {
+            m_qutebrowserScrollPosition = position;
+            updateQutebrowserStatusOverlay();
+        });
+        m_qutebrowserContentsConnection = QObject::connect(newPage, &QWebEnginePage::contentsSizeChanged,
+                                                           q, [this](const QSizeF &size) {
+            m_qutebrowserContentsSize = size;
+            updateQutebrowserStatusOverlay();
+        });
+        m_qutebrowserLoadStartedConnection = QObject::connect(newPage, &QWebEnginePage::loadStarted,
+                                                              q, [this]() {
+            m_qutebrowserLoading = true;
+            m_qutebrowserLoadProgress = 0;
+            updateQutebrowserStatusOverlay();
+        });
+        m_qutebrowserLoadProgressConnection = QObject::connect(newPage, &QWebEnginePage::loadProgress,
+                                                               q, [this](int progress) {
+            m_qutebrowserLoading = progress < 100;
+            m_qutebrowserLoadProgress = progress;
+            updateQutebrowserStatusOverlay();
+        });
+        m_qutebrowserLoadFinishedConnection = QObject::connect(newPage, &QWebEnginePage::loadFinished,
+                                                               q, [this](bool) {
+            m_qutebrowserLoading = false;
+            m_qutebrowserLoadProgress = 100;
+            updateQutebrowserStatusOverlay();
+        });
+        m_qutebrowserUrl = newPage->url();
+        m_qutebrowserScrollPosition = newPage->scrollPosition();
+        m_qutebrowserContentsSize = newPage->contentsSize();
         newPage->setVisible(q->isVisible());
     }
 
@@ -450,6 +505,18 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
     m_qutebrowserMode = QStringLiteral("normal");
     m_qutebrowserKeychain.clear();
     m_qutebrowserCount.clear();
+    if (newPage) {
+        m_qutebrowserUrl = newPage->url();
+        m_qutebrowserScrollPosition = newPage->scrollPosition();
+        m_qutebrowserContentsSize = newPage->contentsSize();
+    } else {
+        m_qutebrowserUrl = QUrl();
+        m_qutebrowserScrollPosition = QPointF();
+        m_qutebrowserContentsSize = QSizeF();
+    }
+    m_qutebrowserHoveredUrl.clear();
+    m_qutebrowserLoading = false;
+    m_qutebrowserLoadProgress = 100;
     updateQutebrowserStatusOverlay();
 }
 
@@ -491,6 +558,34 @@ void QWebEngineViewPrivate::positionQutebrowserStatusOverlay()
     m_qutebrowserStatusOverlay->raise();
 }
 
+QString QWebEngineViewPrivate::qutebrowserScrollText() const
+{
+    if (m_qutebrowserContentsSize.height() <= 0)
+        return QStringLiteral("[0/1]");
+
+    Q_Q(const QWebEngineView);
+    const double viewportHeight = q ? q->height() : 0;
+    const double maxY = std::max(0.0, m_qutebrowserContentsSize.height() - viewportHeight);
+    if (maxY <= 1.0)
+        return QStringLiteral("[top]");
+
+    const double y = std::clamp(m_qutebrowserScrollPosition.y(), 0.0, maxY);
+    if (y <= 1.0)
+        return QStringLiteral("[top]");
+    if (maxY - y <= 1.0)
+        return QStringLiteral("[bot]");
+    return QStringLiteral("[%1%]").arg(static_cast<int>(std::round((y / maxY) * 100.0)));
+}
+
+QString QWebEngineViewPrivate::qutebrowserUrlText() const
+{
+    if (!m_qutebrowserHoveredUrl.isEmpty())
+        return m_qutebrowserHoveredUrl;
+    if (m_qutebrowserUrl.isEmpty())
+        return QString();
+    return m_qutebrowserUrl.toDisplayString(QUrl::PreferLocalFile | QUrl::RemovePassword);
+}
+
 void QWebEngineViewPrivate::updateQutebrowserStatusOverlay()
 {
     ensureQutebrowserStatusOverlay();
@@ -498,17 +593,53 @@ void QWebEngineViewPrivate::updateQutebrowserStatusOverlay()
     const QString keyText = m_qutebrowserCount + m_qutebrowserKeychain;
     const bool hasMode = m_qutebrowserMode != QStringLiteral("normal") && !m_qutebrowserMode.isEmpty();
     const bool hasKeyText = !keyText.isEmpty();
+    const QString urlText = qutebrowserUrlText();
+    const QString scrollText = qutebrowserScrollText();
 
-    if (!hasMode && !hasKeyText) {
+    QString leftText;
+    if (hasMode)
+        leftText = QStringLiteral("-- %1 MODE --").arg(qutebrowserModeDisplayName(m_qutebrowserMode));
+    if (hasKeyText)
+        leftText += (leftText.isEmpty() ? QString() : QStringLiteral("  ")) + keyText;
+
+    QString rightText = urlText;
+    if (m_qutebrowserLoading && m_qutebrowserLoadProgress < 100)
+        rightText += (rightText.isEmpty() ? QString() : QStringLiteral(" ")) + QStringLiteral("[%1%]").arg(m_qutebrowserLoadProgress);
+    if (!scrollText.isEmpty())
+        rightText += (rightText.isEmpty() ? QString() : QStringLiteral(" ")) + scrollText;
+
+    if (leftText.isEmpty() && rightText.isEmpty()) {
         m_qutebrowserStatusOverlay->hide();
         return;
     }
 
+    Q_Q(QWebEngineView);
+    const int availableWidth = qMax(20, q->width() - 12);
+    const QFontMetrics metrics(m_qutebrowserStatusOverlay->font());
     QString text;
-    if (hasMode)
-        text = QStringLiteral("-- %1 MODE --").arg(qutebrowserModeDisplayName(m_qutebrowserMode));
-    if (hasKeyText)
-        text += (text.isEmpty() ? QString() : QStringLiteral("  ")) + keyText;
+    if (leftText.isEmpty()) {
+        text = metrics.elidedText(rightText, Qt::ElideMiddle, availableWidth);
+    } else if (rightText.isEmpty()) {
+        text = metrics.elidedText(leftText, Qt::ElideRight, availableWidth);
+    } else {
+        const int minGap = metrics.horizontalAdvance(QStringLiteral("  "));
+        QString left = leftText;
+        QString right = rightText;
+        int leftWidth = metrics.horizontalAdvance(left);
+        int rightWidth = metrics.horizontalAdvance(right);
+        if (leftWidth + minGap + rightWidth > availableWidth) {
+            const int rightBudget = qMax(80, availableWidth - minGap - leftWidth);
+            right = metrics.elidedText(right, Qt::ElideMiddle, rightBudget);
+            rightWidth = metrics.horizontalAdvance(right);
+        }
+        if (leftWidth + minGap + rightWidth > availableWidth) {
+            const int leftBudget = qMax(80, availableWidth - minGap - rightWidth);
+            left = metrics.elidedText(left, Qt::ElideRight, leftBudget);
+            leftWidth = metrics.horizontalAdvance(left);
+        }
+        const int spaces = qMax(2, (availableWidth - leftWidth - rightWidth) / qMax(1, metrics.horizontalAdvance(QLatin1Char(' '))));
+        text = left + QString(spaces, QLatin1Char(' ')) + right;
+    }
 
     QString fg = QStringLiteral("#ffffff");
     QString bg = QStringLiteral("#00050f");

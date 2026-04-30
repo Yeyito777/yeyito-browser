@@ -111,6 +111,9 @@ private:
                               const QKeyEvent *event,
                               CommandResult *result);
     void emitPythonCommand(const QString &command);
+    QString firstToken(const QString &arguments) const;
+    void openUrlFromCommand(const QString &command, content::WebContents *contents);
+    void yankFromCommand(const QString &command);
     void smoothScrollBy(int dx, int dy, content::WebContents *contents);
     void scrollToPercent(double x, double y, content::WebContents *contents);
     void insertText(const QString &text, content::WebContents *contents);

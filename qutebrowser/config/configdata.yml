@@ -2237,7 +2237,7 @@ spellcheck.languages:
 ## statusbar
 
 statusbar.show:
-  default: always
+  default: in-mode
   type:
     name: String
     valid_values:

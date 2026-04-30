@@ -11,14 +11,21 @@
 
 #include "base/functional/bind.h"
 #include "base/values.h"
+#include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/ime/text_input_type.h"
+#include "ui/base/page_transition_types.h"
+#include "ui/base/window_open_disposition.h"
+#include "url/gurl.h"
 
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QRectF>
 #include <QTimer>
+#include <QUrl>
 
 #include <algorithm>
 #include <cmath>
@@ -523,6 +530,38 @@ bool QutebrowserKeyDispatcher::executeNativeCommand(const QString &command,
         *result = CommandResult::kHandled;
         return true;
     }
+    if (name == QStringLiteral("tab-close") && adapter) {
+        if (command.contains(QStringLiteral("-o")))
+            return false;
+        adapter->requestClose();
+        *result = CommandResult::kHandled;
+        return true;
+    }
+    if (name == QStringLiteral("tab-mute") && adapter) {
+        adapter->setAudioMuted(!adapter->isAudioMuted());
+        *result = CommandResult::kHandled;
+        return true;
+    }
+    if (name == QStringLiteral("download") && adapter) {
+        adapter->download(adapter->activeUrl(), QString());
+        *result = CommandResult::kHandled;
+        return true;
+    }
+    if (name == QStringLiteral("view-source") && adapter && adapter->canViewSource()) {
+        adapter->viewSource();
+        *result = CommandResult::kHandled;
+        return true;
+    }
+    if (name == QStringLiteral("open")) {
+        openUrlFromCommand(command, contents);
+        *result = CommandResult::kHandled;
+        return true;
+    }
+    if (name == QStringLiteral("yank")) {
+        yankFromCommand(command);
+        *result = CommandResult::kHandled;
+        return true;
+    }
     if (name == QStringLiteral("scroll-px")) {
         const QStringList args = commandArgument(command).split(QLatin1Char(' '), Qt::SkipEmptyParts);
         if (args.size() >= 2) {
@@ -599,6 +638,86 @@ void QutebrowserKeyDispatcher::emitPythonCommand(const QString &command)
 {
     if (delegate_ && delegate_->adapterClient())
         delegate_->adapterClient()->qutebrowserCommandRequested(command);
+}
+
+QString QutebrowserKeyDispatcher::firstToken(const QString &arguments) const
+{
+    const QStringList parts = arguments.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        if (part.startsWith(QLatin1Char('-')))
+            continue;
+        return part;
+    }
+    return QString();
+}
+
+void QutebrowserKeyDispatcher::openUrlFromCommand(const QString &command, content::WebContents *contents)
+{
+    if (!contents)
+        return;
+
+    QString target = firstToken(commandArgument(command));
+    if (target == QStringLiteral("{clipboard}")) {
+        if (QClipboard *clipboard = QGuiApplication::clipboard())
+            target = clipboard->text(QClipboard::Clipboard).trimmed();
+    } else if (target == QStringLiteral("{primary}")) {
+        if (QClipboard *clipboard = QGuiApplication::clipboard())
+            target = clipboard->text(QClipboard::Selection).trimmed();
+    }
+    if (target.isEmpty())
+        return;
+
+    QUrl url = QUrl::fromUserInput(target);
+    if (!url.isValid())
+        return;
+
+    WindowOpenDisposition disposition = command.contains(QStringLiteral("-t"))
+            ? WindowOpenDisposition::NEW_FOREGROUND_TAB
+            : WindowOpenDisposition::CURRENT_TAB;
+    const GURL gurl(url.toString().toStdString());
+    if (!gurl.is_valid())
+        return;
+
+    content::OpenURLParams params(gurl,
+                                  content::Referrer(),
+                                  disposition,
+                                  ui::PAGE_TRANSITION_TYPED,
+                                  false);
+    contents->OpenURL(params, {});
+}
+
+void QutebrowserKeyDispatcher::yankFromCommand(const QString &command)
+{
+    WebContentsAdapter *adapter = delegate_ ? delegate_->webContentsAdapter() : nullptr;
+    if (!adapter)
+        return;
+
+    const QString args = commandArgument(command);
+    QString text;
+    const QUrl url = adapter->activeUrl();
+    const QString urlText = url.toDisplayString(QUrl::RemovePassword);
+    if (args.contains(QStringLiteral("selection"))) {
+        text = adapter->selectedText();
+    } else if (args.contains(QStringLiteral("title"))) {
+        text = adapter->pageTitle();
+    } else if (args.contains(QStringLiteral("domain"))) {
+        text = url.host();
+    } else if (args.contains(QStringLiteral("inline"))) {
+        text = QStringLiteral("[%1](%2)").arg(adapter->pageTitle(), urlText);
+    } else {
+        text = urlText;
+    }
+
+    if (text.isEmpty())
+        return;
+
+    if (QClipboard *clipboard = QGuiApplication::clipboard()) {
+        const bool useSelection = args.contains(QStringLiteral("-s"));
+        if (useSelection && clipboard->supportsSelection())
+            clipboard->setText(text, QClipboard::Selection);
+        else
+            clipboard->setText(text, QClipboard::Clipboard);
+    }
 }
 
 void QutebrowserKeyDispatcher::smoothScrollBy(int dx, int dy, content::WebContents *contents)
