@@ -21,6 +21,18 @@ namespace blink {
 
 namespace {
 
+constexpr int kQutebrowserBrowserCommandWebModifier = 1 << 27;
+constexpr int kQutebrowserPageInputWebModifier = 1 << 28;
+
+bool IsQutebrowserBrowserCommand(const WebKeyboardEvent& event) {
+  return event.is_browser_shortcut ||
+         (event.GetModifiers() & kQutebrowserBrowserCommandWebModifier);
+}
+
+bool IsQutebrowserPageInput(const WebKeyboardEvent& event) {
+  return event.GetModifiers() & kQutebrowserPageInputWebModifier;
+}
+
 bool HasNoKeyModifiers(const WebKeyboardEvent& event) {
   return (event.GetModifiers() & WebKeyboardEvent::kKeyModifiers) == 0;
 }
@@ -86,6 +98,13 @@ WebInputEventResult Hints::HandleKeyEvent(const WebKeyboardEvent& event) {
     return WebInputEventResult::kNotHandled;
   }
 
+  if (IsQutebrowserPageInput(event)) {
+    if (active_) {
+      Stop();
+    }
+    return WebInputEventResult::kNotHandled;
+  }
+
   if (event.GetType() == WebInputEvent::Type::kChar &&
       pending_char_to_suppress_) {
     UChar c = CharacterFromEvent(event);
@@ -103,7 +122,8 @@ WebInputEventResult Hints::HandleKeyEvent(const WebKeyboardEvent& event) {
       return WebInputEventResult::kNotHandled;
     }
     if (!IsHintModeEntryKey(event) ||
-        ShouldIgnoreEntryKeyForFocusedEditable()) {
+        (!IsQutebrowserBrowserCommand(event) &&
+         ShouldIgnoreEntryKeyForFocusedEditable())) {
       return WebInputEventResult::kNotHandled;
     }
     Start();

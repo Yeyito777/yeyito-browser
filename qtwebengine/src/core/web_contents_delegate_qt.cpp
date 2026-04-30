@@ -42,6 +42,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/invalidate_type.h"
+#include "content/public/browser/keyboard_event_processing_result.h"
 #include "content/public/browser/media_stream_request.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
@@ -57,6 +58,7 @@
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom.h"
 
 #include <QDesktopServices>
+#include <QKeyEvent>
 #include <QTimer>
 #include <QWindow>
 
@@ -260,6 +262,19 @@ void WebContentsDelegateQt::LoadProgressChanged(double progress)
         m_loadingInfo.progress = p;
         m_viewClient->loadProgressChanged(p);
     }
+}
+
+content::KeyboardEventProcessingResult WebContentsDelegateQt::PreHandleKeyboardEvent(content::WebContents *, const input::NativeWebKeyboardEvent &event)
+{
+    if (!event.os_event)
+        return content::KeyboardEventProcessingResult::NOT_HANDLED;
+
+    QKeyEvent *keyEvent = ToKeyEvent(event.os_event);
+    constexpr quint32 kQutebrowserBrowserCommandNativeModifier = 0x40000000;
+    if (keyEvent->nativeModifiers() & kQutebrowserBrowserCommandNativeModifier)
+        return content::KeyboardEventProcessingResult::NOT_HANDLED_IS_SHORTCUT;
+
+    return content::KeyboardEventProcessingResult::NOT_HANDLED;
 }
 
 bool WebContentsDelegateQt::HandleKeyboardEvent(content::WebContents *, const input::NativeWebKeyboardEvent &event)

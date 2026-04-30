@@ -5,6 +5,7 @@
 #define WEB_CONTENTS_DELEGATE_QT_H
 
 #include "content/browser/renderer_host/frame_tree_node.h"
+#include "content/public/browser/keyboard_event_processing_result.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -91,6 +92,7 @@ public:
                                          bool user_gesture, bool *was_blocked) override;
     void CloseContents(content::WebContents *source) override;
     void LoadProgressChanged(double progress) override;
+    content::KeyboardEventProcessingResult PreHandleKeyboardEvent(content::WebContents *source, const input::NativeWebKeyboardEvent &event) override;
     bool HandleKeyboardEvent(content::WebContents *source, const input::NativeWebKeyboardEvent &event) override;
     std::unique_ptr<content::ColorChooser> OpenColorChooser(content::WebContents *source, SkColor color, const std::vector<blink::mojom::ColorSuggestionPtr> &suggestions) override;
     void WebContentsCreated(content::WebContents *source_contents, int opener_render_process_id, int opener_render_frame_id,
