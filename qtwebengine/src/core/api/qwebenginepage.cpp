@@ -315,6 +315,9 @@ void QWebEnginePagePrivate::unhandledKeyEvent(QKeyEvent *event)
 
 void QWebEnginePagePrivate::qutebrowserCommandRequested(const QString &command)
 {
+    if (view && view->qutebrowserHandleCommand(command))
+        return;
+
     Q_Q(QWebEnginePage);
     Q_EMIT q->qutebrowserCommandRequested(command);
 }

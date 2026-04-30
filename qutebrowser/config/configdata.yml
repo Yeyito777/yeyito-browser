@@ -3847,8 +3847,6 @@ bindings.default:
       n: search-next
       N: search-prev
       i: mode-enter insert
-      v: mode-enter caret
-      V: mode-enter caret ;; selection-toggle --line
       "`": mode-enter set_mark
       "'": mode-enter jump_mark
       yy: yank
@@ -4054,36 +4052,6 @@ bindings.default:
       <Alt-Y>: prompt-yank
       <Alt-Shift-Y>: prompt-yank --sel
       <Escape>: mode-leave
-    caret:
-      v: selection-toggle
-      V: selection-toggle --line
-      <Space>: selection-toggle
-      <Ctrl-Space>: selection-drop
-      c: mode-enter normal
-      j: move-to-next-line
-      k: move-to-prev-line
-      l: move-to-next-char
-      h: move-to-prev-char
-      e: move-to-end-of-word
-      w: move-to-next-word
-      b: move-to-prev-word
-      o: selection-reverse
-      "]": move-to-start-of-next-block
-      "[": move-to-start-of-prev-block
-      "}": move-to-end-of-next-block
-      "{": move-to-end-of-prev-block
-      "0": move-to-start-of-line
-      $: move-to-end-of-line
-      gg: move-to-start-of-document
-      G: move-to-end-of-document
-      Y: yank selection -s
-      y: yank selection
-      <Return>: yank selection
-      H: scroll left
-      J: scroll down
-      K: scroll up
-      L: scroll right
-      <Escape>: mode-leave
     register:
       <Escape>: mode-leave
   type:
@@ -4186,9 +4154,6 @@ bindings.commands:
       locations or when invoked from JavaScript.
 
     * yesno: Entered when there's a yes/no prompt displayed.
-
-    * caret: Entered when pressing the `v` mode, used to select text using the
-      keyboard.
 
     * register: Entered when qutebrowser is waiting for a register name/key for
       commands like `:set-mark`.

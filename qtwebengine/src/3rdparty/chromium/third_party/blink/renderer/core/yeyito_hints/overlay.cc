@@ -28,8 +28,10 @@ namespace blink {
 namespace {
 
 constexpr SkColor kHintBackground = SkColorSetRGB(0x1d, 0x9b, 0xf0);
+constexpr SkColor kHintBorder = SkColorSetRGB(0x1d, 0x9b, 0xf0);
 constexpr SkColor kHintForeground = SkColorSetRGB(0x00, 0x05, 0x0f);
 constexpr SkColor kHintMatchedForeground = SkColorSetRGB(0xff, 0xff, 0xff);
+constexpr float kHintBorderWidth = 1.0f;
 
 bool LabelIsVisibleForPrefix(const String& label, const String& prefix) {
   return prefix.empty() || label.StartsWith(prefix);
@@ -123,6 +125,13 @@ void PaintLabel(cc::PaintCanvas& canvas,
   background_flags.setColor(kHintBackground);
   background_flags.setStyle(cc::PaintFlags::kFill_Style);
   canvas.drawRect(background, background_flags);
+
+  cc::PaintFlags border_flags;
+  border_flags.setAntiAlias(false);
+  border_flags.setColor(kHintBorder);
+  border_flags.setStyle(cc::PaintFlags::kStroke_Style);
+  border_flags.setStrokeWidth(kHintBorderWidth);
+  canvas.drawRect(background, border_flags);
 
   wtf_size_t matched_char_count = 0;
   if (!prefix.empty() && label.StartsWith(prefix)) {

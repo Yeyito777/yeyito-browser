@@ -306,7 +306,6 @@ QString QutebrowserKeyDispatcher::modeName(Mode mode) const
     case Mode::kCommand: return QStringLiteral("command");
     case Mode::kPrompt: return QStringLiteral("prompt");
     case Mode::kYesno: return QStringLiteral("yesno");
-    case Mode::kCaret: return QStringLiteral("caret");
     case Mode::kSetMark: return QStringLiteral("set_mark");
     case Mode::kJumpMark: return QStringLiteral("jump_mark");
     case Mode::kRegister: return QStringLiteral("register");
@@ -473,7 +472,6 @@ bool QutebrowserKeyDispatcher::commandEntersMode(const QString &command, Mode *m
     const QString arg = commandArgument(command);
     if (arg == QStringLiteral("insert")) *mode = Mode::kInsert;
     else if (arg == QStringLiteral("passthrough")) *mode = Mode::kPassthrough;
-    else if (arg == QStringLiteral("caret")) *mode = Mode::kCaret;
     else if (arg == QStringLiteral("set_mark")) *mode = Mode::kSetMark;
     else if (arg == QStringLiteral("jump_mark")) *mode = Mode::kJumpMark;
     else if (arg == QStringLiteral("normal")) *mode = Mode::kNormal;

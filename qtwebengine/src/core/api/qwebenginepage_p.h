@@ -68,6 +68,7 @@ public:
     virtual bool isEnabled() const = 0;
     virtual bool isVisible() const = 0;
     virtual QRect viewportRect() const = 0;
+    virtual bool qutebrowserHandleCommand(const QString &command) { Q_UNUSED(command); return false; }
     virtual void focusContainer() = 0;
     virtual void unhandledKeyEvent(QKeyEvent *event) = 0;
     virtual bool passOnFocus(bool reverse) = 0;

@@ -43,9 +43,12 @@ class TouchSelectionMenuWidget;
 QT_BEGIN_NAMESPACE
 
 class QLabel;
+class QLineEdit;
 class QMenu;
 class QPrinter;
+class QWebEngineFindTextResult;
 class QWebEngineView;
+class QWidget;
 
 class QWebEngineViewPrivate : public PageView
 {
@@ -100,9 +103,20 @@ public:
     bool isEnabled() const override;
     bool isVisible() const override;
     QRect viewportRect() const override;
+    bool qutebrowserHandleCommand(const QString &command) override;
     void ensureQutebrowserStatusOverlay();
     void updateQutebrowserStatusOverlay();
     void positionQutebrowserStatusOverlay();
+    void ensureQutebrowserFindOverlay();
+    void positionQutebrowserFindOverlay();
+    void startQutebrowserFind(bool reverse);
+    void acceptQutebrowserFind();
+    void cancelQutebrowserFind();
+    void clearQutebrowserFind();
+    void updateQutebrowserFindFromInput();
+    void navigateQutebrowserFind(bool reverse);
+    void onQutebrowserFindFinished(const QWebEngineFindTextResult &result);
+    void updateQutebrowserFindOverlay();
     void onQutebrowserModeChanged(const QString &oldMode, const QString &newMode);
     void onQutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count);
     QString qutebrowserScrollText() const;
@@ -118,7 +132,12 @@ public:
     QMetaObject::Connection m_qutebrowserLoadStartedConnection;
     QMetaObject::Connection m_qutebrowserLoadProgressConnection;
     QMetaObject::Connection m_qutebrowserLoadFinishedConnection;
+    QMetaObject::Connection m_qutebrowserFindConnection;
     QLabel *m_qutebrowserStatusOverlay = nullptr;
+    QWidget *m_qutebrowserFindOverlay = nullptr;
+    QLabel *m_qutebrowserFindPrefixLabel = nullptr;
+    QLineEdit *m_qutebrowserFindLineEdit = nullptr;
+    QLabel *m_qutebrowserFindCountLabel = nullptr;
     QString m_qutebrowserMode = QStringLiteral("normal");
     QString m_qutebrowserKeychain;
     QString m_qutebrowserCount;
@@ -130,6 +149,11 @@ public:
     bool m_qutebrowserLoading = false;
     bool m_qutebrowserCanGoBack = false;
     bool m_qutebrowserCanGoForward = false;
+    bool m_qutebrowserFindActive = false;
+    bool m_qutebrowserFindReverse = false;
+    QString m_qutebrowserFindText;
+    int m_qutebrowserFindActiveMatch = 0;
+    int m_qutebrowserFindTotalMatches = 0;
     bool m_dragEntered;
     mutable bool m_ownsPage;
     QWebEngineContextMenuRequest *m_contextRequest;

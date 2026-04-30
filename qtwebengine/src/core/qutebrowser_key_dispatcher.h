@@ -52,7 +52,6 @@ private:
         kCommand,
         kPrompt,
         kYesno,
-        kCaret,
         kSetMark,
         kJumpMark,
         kRegister,

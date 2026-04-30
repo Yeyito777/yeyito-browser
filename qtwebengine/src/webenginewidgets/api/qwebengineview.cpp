@@ -14,6 +14,7 @@
 
 #include <QtWebEngineCore/private/qwebenginepage_p.h>
 #include <QtWebEngineCore/qwebenginecontextmenurequest.h>
+#include <QtWebEngineCore/qwebenginefindtextresult.h>
 #include <QtWebEngineCore/qwebenginehistory.h>
 #include <QtWebEngineCore/qwebenginehttprequest.h>
 #include <QtWebEngineCore/qwebengineprofile.h>
@@ -26,9 +27,14 @@
 #include <QContextMenuEvent>
 #include <QToolTip>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QKeySequence>
 #include <QKeyEvent>
 #include <QIcon>
 #include <QLabel>
+#include <QLineEdit>
+#include <QShortcut>
+#include <QSignalBlocker>
 #include <QStyle>
 #include <QGuiApplication>
 #include <QQuickWidget>
@@ -409,6 +415,7 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
         QObject::disconnect(m_qutebrowserLoadStartedConnection);
         QObject::disconnect(m_qutebrowserLoadProgressConnection);
         QObject::disconnect(m_qutebrowserLoadFinishedConnection);
+        QObject::disconnect(m_qutebrowserFindConnection);
         m_qutebrowserModeConnection = {};
         m_qutebrowserStatusConnection = {};
         m_qutebrowserUrlConnection = {};
@@ -418,6 +425,7 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
         m_qutebrowserLoadStartedConnection = {};
         m_qutebrowserLoadProgressConnection = {};
         m_qutebrowserLoadFinishedConnection = {};
+        m_qutebrowserFindConnection = {};
     }
 
     if (newPage) {
@@ -480,6 +488,10 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
             }
             updateQutebrowserStatusOverlay();
         });
+        m_qutebrowserFindConnection = QObject::connect(newPage, &QWebEnginePage::findTextFinished,
+                                                       q, [this](const QWebEngineFindTextResult &result) {
+            onQutebrowserFindFinished(result);
+        });
         m_qutebrowserUrl = newPage->url();
         m_qutebrowserScrollPosition = newPage->scrollPosition();
         m_qutebrowserContentsSize = newPage->contentsSize();
@@ -534,6 +546,33 @@ static QString qutebrowserModeDisplayName(QString mode)
 {
     mode.replace(QLatin1Char('_'), QLatin1Char('-'));
     return mode.toUpper();
+}
+
+static QString qutebrowserCommandName(QString command)
+{
+    command = command.trimmed();
+    const int space = command.indexOf(QLatin1Char(' '));
+    if (space >= 0)
+        command.truncate(space);
+    return command;
+}
+
+static QString qutebrowserCommandArgument(QString command)
+{
+    command = command.trimmed();
+    const int space = command.indexOf(QLatin1Char(' '));
+    return space < 0 ? QString() : command.mid(space + 1).trimmed();
+}
+
+static QString qutebrowserFirstNonOptionArgument(const QString &arguments)
+{
+    const QStringList parts = arguments.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        if (part.startsWith(QLatin1Char('-')))
+            continue;
+        return part;
+    }
+    return QString();
 }
 
 void QWebEngineViewPrivate::ensureQutebrowserStatusOverlay()
@@ -667,7 +706,6 @@ void QWebEngineViewPrivate::updateQutebrowserStatusOverlay()
         fg = QStringLiteral("#eaf7ff");
         bg = QStringLiteral("#0070b8");
     } else if (m_qutebrowserMode == QStringLiteral("command") ||
-               m_qutebrowserMode == QStringLiteral("caret") ||
                m_qutebrowserMode == QStringLiteral("hint")) {
         fg = QStringLiteral("#ffffff");
         bg = QStringLiteral("#000a1a");
@@ -685,6 +723,11 @@ void QWebEngineViewPrivate::updateQutebrowserStatusOverlay()
     m_qutebrowserStatusOverlay->setText(text);
     positionQutebrowserStatusOverlay();
     m_qutebrowserStatusOverlay->show();
+    if (m_qutebrowserFindOverlay && m_qutebrowserFindActive) {
+        positionQutebrowserFindOverlay();
+        m_qutebrowserFindOverlay->show();
+        m_qutebrowserFindOverlay->raise();
+    }
 }
 
 void QWebEngineViewPrivate::onQutebrowserModeChanged(const QString &oldMode, const QString &newMode)
@@ -703,6 +746,251 @@ void QWebEngineViewPrivate::onQutebrowserStatusChanged(const QString &mode, cons
     m_qutebrowserKeychain = keychain;
     m_qutebrowserCount = count;
     updateQutebrowserStatusOverlay();
+}
+
+bool QWebEngineViewPrivate::qutebrowserHandleCommand(const QString &command)
+{
+    const QString name = qutebrowserCommandName(command);
+    if (name == QStringLiteral("cmd-set-text")) {
+        const QString first = qutebrowserFirstNonOptionArgument(qutebrowserCommandArgument(command));
+        if (first == QStringLiteral("/")) {
+            startQutebrowserFind(false);
+            return true;
+        }
+        if (first == QStringLiteral("?")) {
+            startQutebrowserFind(true);
+            return true;
+        }
+        return false;
+    }
+
+    if (name == QStringLiteral("search-next")) {
+        if (m_qutebrowserFindText.isEmpty() && !m_qutebrowserFindActive)
+            return false;
+        navigateQutebrowserFind(false);
+        return true;
+    }
+    if (name == QStringLiteral("search-prev")) {
+        if (m_qutebrowserFindText.isEmpty() && !m_qutebrowserFindActive)
+            return false;
+        navigateQutebrowserFind(true);
+        return true;
+    }
+    if (name == QStringLiteral("search") && qutebrowserCommandArgument(command).isEmpty()) {
+        if (m_qutebrowserFindText.isEmpty() && !m_qutebrowserFindActive)
+            return false;
+        clearQutebrowserFind();
+        return true;
+    }
+
+    return false;
+}
+
+void QWebEngineViewPrivate::ensureQutebrowserFindOverlay()
+{
+    Q_Q(QWebEngineView);
+    if (m_qutebrowserFindOverlay)
+        return;
+
+    auto *overlay = new QWidget(q);
+    overlay->setObjectName(QStringLiteral("QutebrowserChromeFindbar"));
+    overlay->setAutoFillBackground(true);
+    overlay->setFixedHeight(24);
+    overlay->hide();
+
+    QFont font(QStringLiteral("JetBrains Mono"));
+    font.setStyleHint(QFont::Monospace);
+    font.setPointSize(10);
+
+    auto *layout = new QHBoxLayout(overlay);
+    layout->setContentsMargins(6, 0, 6, 0);
+    layout->setSpacing(6);
+
+    auto *prefix = new QLabel(QStringLiteral("/"), overlay);
+    prefix->setObjectName(QStringLiteral("QutebrowserChromeFindPrefix"));
+    prefix->setFont(font);
+    prefix->setFixedWidth(QFontMetrics(font).horizontalAdvance(QStringLiteral("?")) + 2);
+    prefix->setAlignment(Qt::AlignCenter);
+
+    auto *lineEdit = new QLineEdit(overlay);
+    lineEdit->setObjectName(QStringLiteral("QutebrowserChromeFindInput"));
+    lineEdit->setFont(font);
+    lineEdit->setFrame(false);
+    lineEdit->setClearButtonEnabled(false);
+    lineEdit->setPlaceholderText(QStringLiteral("search"));
+
+    auto *count = new QLabel(overlay);
+    count->setObjectName(QStringLiteral("QutebrowserChromeFindCount"));
+    count->setFont(font);
+    count->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    count->setMinimumWidth(QFontMetrics(font).horizontalAdvance(QStringLiteral("000/000")));
+
+    layout->addWidget(prefix);
+    layout->addWidget(lineEdit, 1);
+    layout->addWidget(count);
+
+    overlay->setStyleSheet(QStringLiteral(
+            "QWidget#QutebrowserChromeFindbar {"
+            "  background: #000a1a; color: #ffffff;"
+            "  border-top: 1px solid #1d9bf0;"
+            "}"
+            "QLabel#QutebrowserChromeFindPrefix { color: #4fd0ff; }"
+            "QLabel#QutebrowserChromeFindCount { color: #cce7ff; }"
+            "QLineEdit#QutebrowserChromeFindInput {"
+            "  background: #000a1a; color: #ffffff; border: 0;"
+            "  selection-background-color: #1d9bf0;"
+            "  selection-color: #00050f;"
+            "}"
+            "QLineEdit#QutebrowserChromeFindInput:!focus { color: #cce7ff; }"));
+
+    QObject::connect(lineEdit, &QLineEdit::textChanged, q, [this]() {
+        updateQutebrowserFindFromInput();
+    });
+    QObject::connect(lineEdit, &QLineEdit::returnPressed, q, [this]() {
+        acceptQutebrowserFind();
+    });
+
+    auto *escapeShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), overlay);
+    escapeShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    QObject::connect(escapeShortcut, &QShortcut::activated, q, [this]() {
+        cancelQutebrowserFind();
+    });
+
+    m_qutebrowserFindOverlay = overlay;
+    m_qutebrowserFindPrefixLabel = prefix;
+    m_qutebrowserFindLineEdit = lineEdit;
+    m_qutebrowserFindCountLabel = count;
+    updateQutebrowserFindOverlay();
+}
+
+void QWebEngineViewPrivate::positionQutebrowserFindOverlay()
+{
+    ensureQutebrowserFindOverlay();
+    Q_Q(QWebEngineView);
+    const int height = m_qutebrowserFindOverlay->height() > 0 ? m_qutebrowserFindOverlay->height() : 24;
+    m_qutebrowserFindOverlay->setGeometry(0, qMax(0, q->height() - height), q->width(), height);
+    m_qutebrowserFindOverlay->raise();
+}
+
+void QWebEngineViewPrivate::startQutebrowserFind(bool reverse)
+{
+    ensureQutebrowserFindOverlay();
+    m_qutebrowserFindActive = true;
+    m_qutebrowserFindReverse = reverse;
+    m_qutebrowserFindActiveMatch = 0;
+    m_qutebrowserFindTotalMatches = 0;
+
+    if (m_qutebrowserFindPrefixLabel)
+        m_qutebrowserFindPrefixLabel->setText(reverse ? QStringLiteral("?") : QStringLiteral("/"));
+    if (m_qutebrowserFindLineEdit) {
+        QSignalBlocker blocker(m_qutebrowserFindLineEdit);
+        m_qutebrowserFindLineEdit->setText(m_qutebrowserFindText);
+        m_qutebrowserFindLineEdit->selectAll();
+    }
+    updateQutebrowserFindOverlay();
+    positionQutebrowserFindOverlay();
+    m_qutebrowserFindOverlay->show();
+    m_qutebrowserFindOverlay->raise();
+    if (m_qutebrowserFindLineEdit)
+        m_qutebrowserFindLineEdit->setFocus(Qt::ShortcutFocusReason);
+}
+
+void QWebEngineViewPrivate::acceptQutebrowserFind()
+{
+    if (m_qutebrowserFindLineEdit)
+        m_qutebrowserFindText = m_qutebrowserFindLineEdit->text();
+    m_qutebrowserFindActive = false;
+    if (m_qutebrowserFindOverlay)
+        m_qutebrowserFindOverlay->hide();
+    focusContainer();
+}
+
+void QWebEngineViewPrivate::cancelQutebrowserFind()
+{
+    clearQutebrowserFind();
+    focusContainer();
+}
+
+void QWebEngineViewPrivate::clearQutebrowserFind()
+{
+    m_qutebrowserFindActive = false;
+    m_qutebrowserFindReverse = false;
+    m_qutebrowserFindText.clear();
+    m_qutebrowserFindActiveMatch = 0;
+    m_qutebrowserFindTotalMatches = 0;
+    if (m_qutebrowserFindLineEdit) {
+        QSignalBlocker blocker(m_qutebrowserFindLineEdit);
+        m_qutebrowserFindLineEdit->clear();
+    }
+    if (m_qutebrowserFindOverlay)
+        m_qutebrowserFindOverlay->hide();
+    if (page)
+        page->findText(QString());
+}
+
+void QWebEngineViewPrivate::updateQutebrowserFindFromInput()
+{
+    if (!m_qutebrowserFindLineEdit)
+        return;
+    m_qutebrowserFindText = m_qutebrowserFindLineEdit->text();
+    if (!page)
+        return;
+
+    if (m_qutebrowserFindText.isEmpty()) {
+        m_qutebrowserFindActiveMatch = 0;
+        m_qutebrowserFindTotalMatches = 0;
+        page->findText(QString());
+        updateQutebrowserFindOverlay();
+        return;
+    }
+
+    QWebEnginePage::FindFlags flags;
+    if (m_qutebrowserFindReverse)
+        flags |= QWebEnginePage::FindBackward;
+    page->findText(m_qutebrowserFindText, flags);
+    updateQutebrowserFindOverlay();
+}
+
+void QWebEngineViewPrivate::navigateQutebrowserFind(bool reverse)
+{
+    const QString text = m_qutebrowserFindLineEdit && m_qutebrowserFindActive
+            ? m_qutebrowserFindLineEdit->text()
+            : m_qutebrowserFindText;
+    if (text.isEmpty() || !page)
+        return;
+
+    m_qutebrowserFindText = text;
+    const bool backward = reverse ? !m_qutebrowserFindReverse : m_qutebrowserFindReverse;
+    QWebEnginePage::FindFlags flags;
+    if (backward)
+        flags |= QWebEnginePage::FindBackward;
+    page->findText(text, flags);
+}
+
+void QWebEngineViewPrivate::onQutebrowserFindFinished(const QWebEngineFindTextResult &result)
+{
+    m_qutebrowserFindActiveMatch = result.activeMatch();
+    m_qutebrowserFindTotalMatches = result.numberOfMatches();
+    if (m_qutebrowserFindActive)
+        updateQutebrowserFindOverlay();
+}
+
+void QWebEngineViewPrivate::updateQutebrowserFindOverlay()
+{
+    if (!m_qutebrowserFindOverlay || !m_qutebrowserFindLineEdit || !m_qutebrowserFindCountLabel)
+        return;
+
+    if (m_qutebrowserFindPrefixLabel)
+        m_qutebrowserFindPrefixLabel->setText(m_qutebrowserFindReverse ? QStringLiteral("?") : QStringLiteral("/"));
+
+    QString countText;
+    if (!m_qutebrowserFindLineEdit->text().isEmpty()) {
+        if (m_qutebrowserFindTotalMatches > 0)
+            countText = QStringLiteral("%1/%2").arg(m_qutebrowserFindActiveMatch).arg(m_qutebrowserFindTotalMatches);
+        else
+            countText = QStringLiteral("0/0");
+    }
+    m_qutebrowserFindCountLabel->setText(countText);
 }
 
 void QWebEngineViewPrivate::widgetChanged(QtWebEngineCore::WebEngineQuickWidget *oldWidget,
@@ -735,6 +1023,8 @@ void QWebEngineViewPrivate::widgetChanged(QtWebEngineCore::WebEngineQuickWidget 
     }
 
     positionQutebrowserStatusOverlay();
+    if (m_qutebrowserFindOverlay)
+        positionQutebrowserFindOverlay();
 }
 
 void QWebEngineViewPrivate::contextMenuRequested(QWebEngineContextMenuRequest *request)
@@ -1530,6 +1820,8 @@ bool QWebEngineView::event(QEvent *ev)
     if (ev->type() == QEvent::Resize) {
         Q_D(QWebEngineView);
         d->positionQutebrowserStatusOverlay();
+        if (d->m_qutebrowserFindOverlay)
+            d->positionQutebrowserFindOverlay();
     }
     return handled;
 }
