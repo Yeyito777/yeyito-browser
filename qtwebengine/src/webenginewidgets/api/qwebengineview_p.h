@@ -117,6 +117,16 @@ public:
     void navigateQutebrowserFind(bool reverse);
     void onQutebrowserFindFinished(const QWebEngineFindTextResult &result);
     void updateQutebrowserFindOverlay();
+    void ensureQutebrowserCommandLineOverlay();
+    void positionQutebrowserCommandLineOverlay();
+    void startQutebrowserCommandLine(const QString &text);
+    void acceptQutebrowserCommandLine();
+    void cancelQutebrowserCommandLine();
+    void hideQutebrowserCommandLine();
+    void executeQutebrowserCommandLineCommand(const QString &command);
+    QString qutebrowserCommandLineText() const;
+    QString expandQutebrowserCommandLinePlaceholders(QString text) const;
+    QString qutebrowserCurrentUrlText() const;
     void onQutebrowserModeChanged(const QString &oldMode, const QString &newMode);
     void onQutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count);
     QString qutebrowserScrollText() const;
@@ -138,6 +148,9 @@ public:
     QLabel *m_qutebrowserFindPrefixLabel = nullptr;
     QLineEdit *m_qutebrowserFindLineEdit = nullptr;
     QLabel *m_qutebrowserFindCountLabel = nullptr;
+    QWidget *m_qutebrowserCommandLineOverlay = nullptr;
+    QLabel *m_qutebrowserCommandLinePrefixLabel = nullptr;
+    QLineEdit *m_qutebrowserCommandLineEdit = nullptr;
     QString m_qutebrowserMode = QStringLiteral("normal");
     QString m_qutebrowserKeychain;
     QString m_qutebrowserCount;
@@ -151,6 +164,7 @@ public:
     bool m_qutebrowserCanGoForward = false;
     bool m_qutebrowserFindActive = false;
     bool m_qutebrowserFindReverse = false;
+    bool m_qutebrowserCommandLineActive = false;
     QString m_qutebrowserFindText;
     int m_qutebrowserFindActiveMatch = 0;
     int m_qutebrowserFindTotalMatches = 0;

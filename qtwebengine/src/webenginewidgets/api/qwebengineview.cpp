@@ -564,15 +564,78 @@ static QString qutebrowserCommandArgument(QString command)
     return space < 0 ? QString() : command.mid(space + 1).trimmed();
 }
 
-static QString qutebrowserFirstNonOptionArgument(const QString &arguments)
+struct QutebrowserCmdSetTextPreset
 {
-    const QStringList parts = arguments.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-    for (const QString &part : parts) {
-        if (part.startsWith(QLatin1Char('-')))
-            continue;
-        return part;
+    QString text;
+    bool valid = false;
+    bool space = false;
+    bool append = false;
+};
+
+static bool qutebrowserApplyCmdSetTextOption(const QString &option,
+                                             QutebrowserCmdSetTextPreset *preset)
+{
+    if (option == QStringLiteral("--space")) {
+        preset->space = true;
+        return true;
     }
-    return QString();
+    if (option == QStringLiteral("--append")) {
+        preset->append = true;
+        return true;
+    }
+    if (option == QStringLiteral("--run-on-count"))
+        return true;
+    if (!option.startsWith(QLatin1Char('-')) || option.startsWith(QStringLiteral("--")))
+        return false;
+
+    for (int i = 1; i < option.size(); ++i) {
+        const QChar ch = option.at(i);
+        if (ch == QLatin1Char('s')) {
+            preset->space = true;
+        } else if (ch == QLatin1Char('a')) {
+            preset->append = true;
+        } else if (ch != QLatin1Char('r')) {
+            return false;
+        }
+    }
+    return option.size() > 1;
+}
+
+static QutebrowserCmdSetTextPreset qutebrowserParseCmdSetTextPreset(const QString &arguments)
+{
+    QutebrowserCmdSetTextPreset preset;
+    const int length = arguments.size();
+    int index = 0;
+
+    while (index < length && arguments.at(index).isSpace())
+        ++index;
+
+    while (index < length) {
+        const int tokenStart = index;
+        while (index < length && !arguments.at(index).isSpace())
+            ++index;
+        const QString token = arguments.mid(tokenStart, index - tokenStart);
+
+        if (token == QStringLiteral("--")) {
+            while (index < length && arguments.at(index).isSpace())
+                ++index;
+            preset.text = arguments.mid(index);
+            preset.valid = true;
+            return preset;
+        }
+
+        if (!token.startsWith(QLatin1Char('-')) || !qutebrowserApplyCmdSetTextOption(token, &preset)) {
+            preset.text = arguments.mid(tokenStart);
+            preset.valid = true;
+            return preset;
+        }
+
+        while (index < length && arguments.at(index).isSpace())
+            ++index;
+    }
+
+    preset.valid = false;
+    return preset;
 }
 
 void QWebEngineViewPrivate::ensureQutebrowserStatusOverlay()
@@ -728,6 +791,11 @@ void QWebEngineViewPrivate::updateQutebrowserStatusOverlay()
         m_qutebrowserFindOverlay->show();
         m_qutebrowserFindOverlay->raise();
     }
+    if (m_qutebrowserCommandLineOverlay && m_qutebrowserCommandLineActive) {
+        positionQutebrowserCommandLineOverlay();
+        m_qutebrowserCommandLineOverlay->show();
+        m_qutebrowserCommandLineOverlay->raise();
+    }
 }
 
 void QWebEngineViewPrivate::onQutebrowserModeChanged(const QString &oldMode, const QString &newMode)
@@ -752,13 +820,31 @@ bool QWebEngineViewPrivate::qutebrowserHandleCommand(const QString &command)
 {
     const QString name = qutebrowserCommandName(command);
     if (name == QStringLiteral("cmd-set-text")) {
-        const QString first = qutebrowserFirstNonOptionArgument(qutebrowserCommandArgument(command));
-        if (first == QStringLiteral("/")) {
+        const QutebrowserCmdSetTextPreset preset =
+                qutebrowserParseCmdSetTextPreset(qutebrowserCommandArgument(command));
+        if (!preset.valid)
+            return false;
+
+        QString text = preset.text;
+        if (preset.space)
+            text += QLatin1Char(' ');
+        if (preset.append) {
+            if (!m_qutebrowserCommandLineActive)
+                return false;
+            text = qutebrowserCommandLineText() + text;
+        }
+        text = expandQutebrowserCommandLinePlaceholders(text);
+
+        if (text == QStringLiteral("/")) {
             startQutebrowserFind(false);
             return true;
         }
-        if (first == QStringLiteral("?")) {
+        if (text == QStringLiteral("?")) {
             startQutebrowserFind(true);
+            return true;
+        }
+        if (text.startsWith(QLatin1Char(':'))) {
+            startQutebrowserCommandLine(text);
             return true;
         }
         return false;
@@ -784,6 +870,165 @@ bool QWebEngineViewPrivate::qutebrowserHandleCommand(const QString &command)
     }
 
     return false;
+}
+
+void QWebEngineViewPrivate::ensureQutebrowserCommandLineOverlay()
+{
+    Q_Q(QWebEngineView);
+    if (m_qutebrowserCommandLineOverlay)
+        return;
+
+    auto *overlay = new QWidget(q);
+    overlay->setObjectName(QStringLiteral("QutebrowserChromeCommandLine"));
+    overlay->setAutoFillBackground(true);
+    overlay->setFixedHeight(24);
+    overlay->hide();
+
+    QFont font(QStringLiteral("JetBrains Mono"));
+    font.setStyleHint(QFont::Monospace);
+    font.setPointSize(10);
+
+    auto *layout = new QHBoxLayout(overlay);
+    layout->setContentsMargins(6, 0, 6, 0);
+    layout->setSpacing(4);
+
+    auto *prefix = new QLabel(QStringLiteral(":"), overlay);
+    prefix->setObjectName(QStringLiteral("QutebrowserChromeCommandPrefix"));
+    prefix->setFont(font);
+    prefix->setFixedWidth(QFontMetrics(font).horizontalAdvance(QStringLiteral(":")) + 4);
+    prefix->setAlignment(Qt::AlignCenter);
+
+    auto *lineEdit = new QLineEdit(overlay);
+    lineEdit->setObjectName(QStringLiteral("QutebrowserChromeCommandInput"));
+    lineEdit->setFont(font);
+    lineEdit->setFrame(false);
+    lineEdit->setClearButtonEnabled(false);
+    lineEdit->setPlaceholderText(QStringLiteral("command"));
+
+    layout->addWidget(prefix);
+    layout->addWidget(lineEdit, 1);
+
+    overlay->setStyleSheet(QStringLiteral(
+            "QWidget#QutebrowserChromeCommandLine {"
+            "  background: #000a1a; color: #ffffff;"
+            "  border-top: 1px solid #1d9bf0;"
+            "}"
+            "QLabel#QutebrowserChromeCommandPrefix { color: #4fd0ff; }"
+            "QLineEdit#QutebrowserChromeCommandInput {"
+            "  background: #000a1a; color: #ffffff; border: 0;"
+            "  selection-background-color: #1d9bf0;"
+            "  selection-color: #00050f;"
+            "  placeholder-text-color: #cce7ff;"
+            "}"
+            "QLineEdit#QutebrowserChromeCommandInput:!focus { color: #cce7ff; }"));
+
+    QObject::connect(lineEdit, &QLineEdit::returnPressed, q, [this]() {
+        acceptQutebrowserCommandLine();
+    });
+
+    auto *escapeShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), overlay);
+    escapeShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    QObject::connect(escapeShortcut, &QShortcut::activated, q, [this]() {
+        cancelQutebrowserCommandLine();
+    });
+
+    m_qutebrowserCommandLineOverlay = overlay;
+    m_qutebrowserCommandLinePrefixLabel = prefix;
+    m_qutebrowserCommandLineEdit = lineEdit;
+}
+
+void QWebEngineViewPrivate::positionQutebrowserCommandLineOverlay()
+{
+    ensureQutebrowserCommandLineOverlay();
+    Q_Q(QWebEngineView);
+    const int height = m_qutebrowserCommandLineOverlay->height() > 0
+            ? m_qutebrowserCommandLineOverlay->height() : 24;
+    m_qutebrowserCommandLineOverlay->setGeometry(0, qMax(0, q->height() - height),
+                                                 q->width(), height);
+    m_qutebrowserCommandLineOverlay->raise();
+}
+
+void QWebEngineViewPrivate::startQutebrowserCommandLine(const QString &text)
+{
+    ensureQutebrowserCommandLineOverlay();
+
+    if (m_qutebrowserFindOverlay && m_qutebrowserFindActive) {
+        m_qutebrowserFindActive = false;
+        m_qutebrowserFindOverlay->hide();
+    }
+
+    m_qutebrowserCommandLineActive = true;
+    if (m_qutebrowserCommandLinePrefixLabel)
+        m_qutebrowserCommandLinePrefixLabel->setText(QStringLiteral(":"));
+    if (m_qutebrowserCommandLineEdit) {
+        QSignalBlocker blocker(m_qutebrowserCommandLineEdit);
+        const QString contents = text.startsWith(QLatin1Char(':')) ? text.mid(1) : text;
+        m_qutebrowserCommandLineEdit->setText(contents);
+        m_qutebrowserCommandLineEdit->setCursorPosition(contents.size());
+    }
+
+    positionQutebrowserCommandLineOverlay();
+    m_qutebrowserCommandLineOverlay->show();
+    m_qutebrowserCommandLineOverlay->raise();
+    if (m_qutebrowserCommandLineEdit)
+        m_qutebrowserCommandLineEdit->setFocus(Qt::ShortcutFocusReason);
+}
+
+void QWebEngineViewPrivate::acceptQutebrowserCommandLine()
+{
+    const QString command = m_qutebrowserCommandLineEdit
+            ? m_qutebrowserCommandLineEdit->text() : QString();
+    hideQutebrowserCommandLine();
+    focusContainer();
+    executeQutebrowserCommandLineCommand(command);
+}
+
+void QWebEngineViewPrivate::cancelQutebrowserCommandLine()
+{
+    hideQutebrowserCommandLine();
+    focusContainer();
+}
+
+void QWebEngineViewPrivate::hideQutebrowserCommandLine()
+{
+    m_qutebrowserCommandLineActive = false;
+    if (m_qutebrowserCommandLineEdit) {
+        QSignalBlocker blocker(m_qutebrowserCommandLineEdit);
+        m_qutebrowserCommandLineEdit->clear();
+    }
+    if (m_qutebrowserCommandLineOverlay)
+        m_qutebrowserCommandLineOverlay->hide();
+}
+
+void QWebEngineViewPrivate::executeQutebrowserCommandLineCommand(const QString &command)
+{
+    if (qutebrowserHandleCommand(command))
+        return;
+    if (page)
+        Q_EMIT page->qutebrowserCommandRequested(command);
+}
+
+QString QWebEngineViewPrivate::qutebrowserCommandLineText() const
+{
+    return QStringLiteral(":") + (m_qutebrowserCommandLineEdit
+            ? m_qutebrowserCommandLineEdit->text() : QString());
+}
+
+QString QWebEngineViewPrivate::qutebrowserCurrentUrlText() const
+{
+    const QUrl currentUrl = page ? page->url() : m_qutebrowserUrl;
+    if (currentUrl.isEmpty())
+        return QString();
+    return currentUrl.toDisplayString(QUrl::PreferLocalFile | QUrl::RemovePassword);
+}
+
+QString QWebEngineViewPrivate::expandQutebrowserCommandLinePlaceholders(QString text) const
+{
+    const QString urlText = qutebrowserCurrentUrlText();
+    text.replace(QStringLiteral("{url:pretty}"), urlText);
+    text.replace(QStringLiteral("{url:yank}"), urlText);
+    text.replace(QStringLiteral("{url}"), urlText);
+    return text;
 }
 
 void QWebEngineViewPrivate::ensureQutebrowserFindOverlay()
@@ -875,6 +1120,8 @@ void QWebEngineViewPrivate::positionQutebrowserFindOverlay()
 void QWebEngineViewPrivate::startQutebrowserFind(bool reverse)
 {
     ensureQutebrowserFindOverlay();
+    if (m_qutebrowserCommandLineActive)
+        hideQutebrowserCommandLine();
     m_qutebrowserFindActive = true;
     m_qutebrowserFindReverse = reverse;
     m_qutebrowserFindActiveMatch = 0;
@@ -1025,6 +1272,8 @@ void QWebEngineViewPrivate::widgetChanged(QtWebEngineCore::WebEngineQuickWidget 
     positionQutebrowserStatusOverlay();
     if (m_qutebrowserFindOverlay)
         positionQutebrowserFindOverlay();
+    if (m_qutebrowserCommandLineOverlay)
+        positionQutebrowserCommandLineOverlay();
 }
 
 void QWebEngineViewPrivate::contextMenuRequested(QWebEngineContextMenuRequest *request)
@@ -1822,6 +2071,8 @@ bool QWebEngineView::event(QEvent *ev)
         d->positionQutebrowserStatusOverlay();
         if (d->m_qutebrowserFindOverlay)
             d->positionQutebrowserFindOverlay();
+        if (d->m_qutebrowserCommandLineOverlay)
+            d->positionQutebrowserCommandLineOverlay();
     }
     return handled;
 }
