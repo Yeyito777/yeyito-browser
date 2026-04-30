@@ -104,6 +104,56 @@ window._qutebrowser.scroll = (function() {
         return null;
     };
 
+    const _selectedScrollable = () => {
+        const attr = "data-qutebrowser-scroll-target";
+        const selector = `[${attr}="1"]`;
+        const findIn = (root) => {
+            if (!root || !root.querySelector) {
+                return null;
+            }
+            const found = root.querySelector(selector);
+            if (found) {
+                return found;
+            }
+            const all = root.querySelectorAll ? root.querySelectorAll("*") : [];
+            for (const elem of all) {
+                if (elem.shadowRoot) {
+                    const shadowFound = findIn(elem.shadowRoot);
+                    if (shadowFound) {
+                        return shadowFound;
+                    }
+                }
+            }
+            return null;
+        };
+        return findIn(document);
+    };
+
+    const _isDocumentScroller = (elem) => {
+        const doc = elem && elem.ownerDocument;
+        return !!doc && (elem === doc.scrollingElement ||
+            elem === doc.documentElement || elem === doc.body);
+    };
+
+    const _scrollTargetCenter = (target, dx, dy) => {
+        if (!target) {
+            return null;
+        }
+        if (_isDocumentScroller(target)) {
+            // Let the native compositor scroller target the viewport directly
+            // instead of hit-testing whatever child is under the viewport center.
+            return [-1, -1];
+        }
+        const scrollTarget = _isScrollable(target, dx, dy) ? target :
+            _findScrollable(target, dx, dy);
+        if (!scrollTarget) {
+            return null;
+        }
+        const rect = scrollTarget.getBoundingClientRect();
+        return [Math.round(rect.left + rect.width / 2),
+                Math.round(rect.top + rect.height / 2)];
+    };
+
     // Smooth scroll accumulator — batches rapid scroll calls into one
     // continuous animation instead of fighting independent CSS animations.
     // All steps are truncated to whole pixels to avoid sub-pixel rendering
@@ -150,15 +200,15 @@ window._qutebrowser.scroll = (function() {
     };
 
     funcs.get_scroll_target_center = (dx, dy) => {
+        const selected = _scrollTargetCenter(_selectedScrollable(), dx, dy);
+        if (selected) {
+            return selected;
+        }
+
         const active = _deepActiveElement();
         if (active && active !== document.body &&
             active !== document.documentElement) {
-            const scrollTarget = _findScrollable(active, dx, dy);
-            if (scrollTarget) {
-                const rect = scrollTarget.getBoundingClientRect();
-                return [Math.round(rect.left + rect.width / 2),
-                        Math.round(rect.top + rect.height / 2)];
-            }
+            return _scrollTargetCenter(active, dx, dy);
         }
         return null;
     };

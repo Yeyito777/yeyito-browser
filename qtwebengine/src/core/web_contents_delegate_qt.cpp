@@ -384,6 +384,7 @@ void WebContentsDelegateQt::DidStartNavigation(content::NavigationHandle *naviga
     if (!navigation_handle->IsInMainFrame() || navigation_handle->IsSameDocument())
         return;
 
+    m_qutebrowserKeyDispatcher.clearRendererMode();
     m_loadingInfo.url = toQt(navigation_handle->GetURL());
     // IsErrorPage is only set after navigation commit, so check it otherwise: error page shouldn't have navigation entry
     bool isErrorPage = m_loadingInfo.triggersErrorPage && !navigation_handle->GetNavigationEntry();
@@ -680,6 +681,10 @@ bool WebContentsDelegateQt::DidAddMessageToConsole(content::WebContents *source,
                                                    const std::u16string &message, int32_t line_no, const std::u16string &source_id)
 {
     Q_UNUSED(source);
+    if (message == u"__qutebrowser_native_hints_stopped__") {
+        m_qutebrowserKeyDispatcher.clearRendererMode();
+        return true;
+    }
     m_viewClient->javaScriptConsoleMessage(mapToJavascriptConsoleMessageLevel(log_level), toQt(message), static_cast<int>(line_no), toQt(source_id));
     return false;
 }

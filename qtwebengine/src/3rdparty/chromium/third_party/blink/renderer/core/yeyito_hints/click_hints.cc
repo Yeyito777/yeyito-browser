@@ -156,6 +156,50 @@ bool IsDocumentScroller(Element& element) {
          document.documentElement() == &element || document.body() == &element;
 }
 
+const AtomicString& QutebrowserScrollTargetAttr() {
+  DEFINE_STATIC_LOCAL(AtomicString, attr,
+                      ("data-qutebrowser-scroll-target"));
+  return attr;
+}
+
+const AtomicString& QutebrowserAddedTabIndexAttr() {
+  DEFINE_STATIC_LOCAL(AtomicString, attr,
+                      ("data-qutebrowser-added-tabindex"));
+  return attr;
+}
+
+void ClearQutebrowserScrollTargetMarkers(Document& document) {
+  Element* root = document.documentElement();
+  if (!root) {
+    return;
+  }
+  const AtomicString& target_attr = QutebrowserScrollTargetAttr();
+  const AtomicString& added_tabindex_attr = QutebrowserAddedTabIndexAttr();
+  for (Element& element : ElementTraversal::InclusiveDescendantsOf(*root)) {
+    if (element.hasAttribute(target_attr)) {
+      element.removeAttribute(target_attr);
+    }
+    if (element.hasAttribute(added_tabindex_attr)) {
+      element.removeAttribute(html_names::kTabindexAttr);
+      element.removeAttribute(added_tabindex_attr);
+    }
+  }
+}
+
+void MarkQutebrowserScrollTarget(Element& element) {
+  ClearQutebrowserScrollTargetMarkers(element.GetDocument());
+  element.setAttribute(QutebrowserScrollTargetAttr(), AtomicString("1"));
+  if (!IsDocumentScroller(element) &&
+      !element.hasAttribute(html_names::kTabindexAttr)) {
+    // Non-focusable scroll containers don't reliably become activeElement.
+    // Make the qutebrowser-selected target script-focusable without putting it
+    // in the tab order.  The data marker is still the authoritative scroll
+    // target; focus is a useful fallback and matches qutebrowser's old action.
+    element.setAttribute(QutebrowserAddedTabIndexAttr(), AtomicString("1"));
+    element.setAttribute(html_names::kTabindexAttr, AtomicString("-1"));
+  }
+}
+
 bool OverflowBlocksScrolling(EOverflow overflow) {
   return overflow == EOverflow::kHidden || overflow == EOverflow::kClip;
 }
@@ -291,7 +335,15 @@ void MaybeAppendCandidate(Element& element,
     return;
   }
 
-  gfx::RectF rect = CandidateRect(element, viewport_size);
+  gfx::RectF rect;
+  if (group == CandidateGroup::kScrollables && IsDocumentScroller(element)) {
+    // Keep the page/body scroller hint in the viewport's top-left corner like
+    // qutebrowser's Python hint implementation, regardless of scroll offset or
+    // the document element's full-page bounds.
+    rect = gfx::RectF(0, 0, viewport_size.width(), viewport_size.height());
+  } else {
+    rect = CandidateRect(element, viewport_size);
+  }
   if (rect.IsEmpty()) {
     return;
   }
@@ -351,7 +403,19 @@ void CollectCandidates(LocalFrame& frame,
 
   const AtomicString selector = ConfiguredSelector(group);
   const gfx::Size viewport_size = frame.GetPage()->GetVisualViewport().Size();
+  if (group == CandidateGroup::kScrollables) {
+    // qutebrowser's :qb-scrollable path always put the page scrolling element
+    // first, pinned to top-left, so users trapped inside a nested scroll area can
+    // select the body/page and return j/k to viewport scrolling.
+    if (Element* scroll_element = document->ScrollingElementNoLayout()) {
+      MaybeAppendCandidate(*scroll_element, viewport_size, group, selector,
+                           candidates);
+    }
+  }
   for (Element& element : ElementTraversal::InclusiveDescendantsOf(*root)) {
+    if (group == CandidateGroup::kScrollables && IsDocumentScroller(element)) {
+      continue;
+    }
     CollectElementAndShadowTrees(element, viewport_size, group, selector,
                                  candidates);
   }
@@ -372,6 +436,7 @@ void ActivateCandidate(LocalFrame&,
   }
 
   if (action == ActivationAction::kFocus) {
+    MarkQutebrowserScrollTarget(element);
     element.Focus();
     return;
   }

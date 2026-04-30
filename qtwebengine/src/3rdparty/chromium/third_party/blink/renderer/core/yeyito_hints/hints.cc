@@ -4,12 +4,16 @@
 
 #include "third_party/blink/renderer/core/yeyito_hints/hints.h"
 
+#include <algorithm>
+
 #include "third_party/blink/public/common/input/web_keyboard_event.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
+#include "third_party/blink/renderer/core/frame/frame_console.h"
 #include "third_party/blink/renderer/core/frame/frame_overlay.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/yeyito_hints/click_hints.h"
 #include "third_party/blink/renderer/core/yeyito_hints/hover_hints.h"
 #include "third_party/blink/renderer/core/yeyito_hints/labels.h"
@@ -76,6 +80,16 @@ UChar CharacterFromEvent(const WebKeyboardEvent& event) {
 bool IsEscapeKey(const WebKeyboardEvent& event) {
   return event.windows_key_code == VK_ESCAPE ||
          event.dom_key == static_cast<uint32_t>(ui::DomKey::ESCAPE);
+}
+
+void NotifyBrowserHintsStopped(LocalFrame* frame) {
+  if (!frame) {
+    return;
+  }
+  frame->Console().AddMessage(MakeGarbageCollected<ConsoleMessage>(
+      mojom::blink::ConsoleMessageSource::kOther,
+      mojom::blink::ConsoleMessageLevel::kInfo,
+      String("__qutebrowser_native_hints_stopped__")));
 }
 
 }  // namespace
@@ -223,17 +237,22 @@ void Hints::Start(HintMode mode, ActivationTarget target) {
 }
 
 void Hints::Stop() {
+  const bool was_active = active_;
   active_ = false;
   typed_prefix_ = String();
   candidates_.clear();
+  LocalFrame* frame = GetSupplementable();
   if (frame_overlay_) {
     frame_overlay_.Release()->Destroy();
   }
-  if (LocalFrame* frame = GetSupplementable()) {
+  if (frame) {
     if (frame->View()) {
       frame->View()->SetVisualViewportOrOverlayNeedsRepaint();
       frame->View()->SetPaintArtifactCompositorNeedsUpdate();
       frame->View()->ScheduleAnimation();
+    }
+    if (was_active) {
+      NotifyBrowserHintsStopped(frame);
     }
   }
 }
@@ -275,6 +294,19 @@ void Hints::AssignLabels() {
       hint_labels::LabelLengthForCandidateCount(candidates_.size());
   for (wtf_size_t i = 0; i < candidates_.size(); ++i) {
     candidates_[i].label = hint_labels::LabelForIndex(i, label_length);
+  }
+
+  // Match the old qutebrowser scrollables quirk: the first scrollable candidate
+  // is the page/body scroller, and if the single-key label "f" exists then that
+  // page candidate gets "f" while preserving label uniqueness.
+  if (hint_mode_ == HintMode::kFocus && label_length == 1 &&
+      !candidates_.empty()) {
+    for (wtf_size_t i = 1; i < candidates_.size(); ++i) {
+      if (candidates_[i].label == String("f")) {
+        std::swap(candidates_[0].label, candidates_[i].label);
+        break;
+      }
+    }
   }
 }
 

@@ -24,7 +24,6 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QRectF>
-#include <QTimer>
 #include <QUrl>
 
 #include <algorithm>
@@ -178,7 +177,11 @@ QString QutebrowserKeyDispatcher::keyStringForEvent(const QKeyEvent *event) cons
             key_name = QStringLiteral("F%1").arg(key - Qt::Key_F1 + 1);
         } else if (key >= Qt::Key_A && key <= Qt::Key_Z) {
             const bool shifted = modifiers & Qt::ShiftModifier;
-            key_name = QChar(QLatin1Char((shifted && !has_non_shift_modifier ? 'A' : 'a') + key - Qt::Key_A));
+            // qutebrowser's binding syntax canonicalizes modified letters as
+            // uppercase key names (Ctrl+J, Ctrl+Shift+Y, Alt+M, ...), while
+            // plain shifted text is represented by the shifted character (J).
+            // Keep those forms aligned with qutebrowser_key_bindings.inc.
+            key_name = QChar(QLatin1Char((has_non_shift_modifier || shifted ? 'A' : 'a') + key - Qt::Key_A));
         } else if (!event->text().isEmpty()) {
             key_name = event->text().left(1);
         } else if (key >= Qt::Key_0 && key <= Qt::Key_9) {
@@ -361,7 +364,7 @@ content::KeyboardEventProcessingResult QutebrowserKeyDispatcher::preHandleKeyboa
 
     if (mode_ == Mode::kHint) {
         if (key == QStringLiteral("Escape"))
-            QTimer::singleShot(0, [this] { clearRendererMode(); });
+            clearRendererMode();
         return content::KeyboardEventProcessingResult::NOT_HANDLED_IS_SHORTCUT;
     }
 
@@ -736,14 +739,79 @@ void QutebrowserKeyDispatcher::smoothScrollBy(int dx, int dy, content::WebConten
         return;
     }
 
-    const QString js = QStringLiteral(
-            "(function(){try{"
-            "var qb=window._qutebrowser&&window._qutebrowser.scroll;"
-            "if(!qb||!qb.get_scroll_target_center)return null;"
-            "var p=qb.get_scroll_target_center(%1,%2);"
-            "if(!p||p.length<2)return null;"
-            "return [Math.round(p[0]),Math.round(p[1])];"
-            "}catch(e){return null;}})();").arg(dx).arg(dy);
+    const QString js = QString::fromLatin1(R"JS(
+(function(dx, dy) {
+  try {
+    const scrollableOverflows = new Set(['auto', 'scroll', 'overlay']);
+    const isDocumentScroller = (elem) => {
+      const doc = elem && elem.ownerDocument;
+      return !!doc && (elem === doc.scrollingElement ||
+                       elem === doc.documentElement || elem === doc.body);
+    };
+    const isScrollable = (elem) => {
+      if (!elem) return false;
+      if (isDocumentScroller(elem)) {
+        const style = elem.ownerDocument.defaultView.getComputedStyle(elem);
+        const blocksY = style.overflowY === 'hidden' || style.overflowY === 'clip';
+        const blocksX = style.overflowX === 'hidden' || style.overflowX === 'clip';
+        return (dy !== 0 && elem.scrollHeight > elem.clientHeight && !blocksY) ||
+               (dx !== 0 && elem.scrollWidth > elem.clientWidth && !blocksX);
+      }
+      const style = elem.ownerDocument.defaultView.getComputedStyle(elem);
+      return (dy !== 0 && scrollableOverflows.has(style.overflowY) &&
+              elem.scrollHeight > elem.clientHeight) ||
+             (dx !== 0 && scrollableOverflows.has(style.overflowX) &&
+              elem.scrollWidth > elem.clientWidth);
+    };
+    const findScrollable = (start) => {
+      const doc = document.documentElement;
+      const body = document.body;
+      let current = start;
+      while (current && current !== body && current !== doc) {
+        if (isScrollable(current)) return current;
+        current = current.parentElement;
+      }
+      return null;
+    };
+    const deepActiveElement = (root = document) => {
+      const active = root.activeElement;
+      if (!active) return active;
+      if (active.shadowRoot && active.shadowRoot.activeElement)
+        return deepActiveElement(active.shadowRoot);
+      return active;
+    };
+    const selectedScrollable = () => {
+      const selector = '[data-qutebrowser-scroll-target="1"]';
+      const findIn = (root) => {
+        if (!root || !root.querySelector) return null;
+        const found = root.querySelector(selector);
+        if (found) return found;
+        const all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+        for (const elem of all) {
+          if (elem.shadowRoot) {
+            const foundInShadow = findIn(elem.shadowRoot);
+            if (foundInShadow) return foundInShadow;
+          }
+        }
+        return null;
+      };
+      return findIn(document);
+    };
+    const centerFor = (target) => {
+      if (!target) return null;
+      if (isDocumentScroller(target)) return [-1, -1];
+      const scrollTarget = isScrollable(target) ? target : findScrollable(target);
+      if (!scrollTarget) return null;
+      const rect = scrollTarget.getBoundingClientRect();
+      return [Math.round(rect.left + rect.width / 2),
+              Math.round(rect.top + rect.height / 2)];
+    };
+    return centerFor(selectedScrollable()) || centerFor(deepActiveElement());
+  } catch (e) {
+    return null;
+  }
+})(%1, %2);
+)JS").arg(dx).arg(dy);
 
     contents->GetPrimaryMainFrame()->ExecuteJavaScript(
             js.toStdU16String(),
