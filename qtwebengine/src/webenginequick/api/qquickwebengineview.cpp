@@ -699,6 +699,24 @@ void QQuickWebEngineViewPrivate::unhandledKeyEvent(QKeyEvent *event)
         QCoreApplication::sendEvent(q->parentItem(), event);
 }
 
+void QQuickWebEngineViewPrivate::qutebrowserCommandRequested(const QString &command)
+{
+    Q_UNUSED(command);
+}
+
+void QQuickWebEngineViewPrivate::qutebrowserModeChanged(const QString &oldMode, const QString &newMode)
+{
+    Q_UNUSED(oldMode);
+    Q_UNUSED(newMode);
+}
+
+void QQuickWebEngineViewPrivate::qutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count)
+{
+    Q_UNUSED(mode);
+    Q_UNUSED(keychain);
+    Q_UNUSED(count);
+}
+
 static QWebEngineNewWindowRequest::DestinationType toDestinationType(WebContentsAdapterClient::WindowOpenDisposition disposition)
 {
     switch (disposition) {

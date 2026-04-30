@@ -45,11 +45,39 @@ class CORE_EXPORT Hints final : public GarbageCollected<Hints>,
   void Trace(Visitor* visitor) const override;
 
  private:
-  void Start();
+  enum class HintMode {
+    kClick,
+    kHover,
+    kFocus,
+  };
+
+  enum class ActivationTarget {
+    kCurrentTab,
+    kNewTab,
+    kRightClick,
+  };
+
+  struct HintEntry {
+    bool is_entry = false;
+    HintMode mode = HintMode::kClick;
+    ActivationTarget target = ActivationTarget::kCurrentTab;
+  };
+
+  void Start(HintMode mode, ActivationTarget target);
   void Stop();
   void CollectCandidates();
   void AssignLabels();
-  bool IsHintModeEntryKey(const WebKeyboardEvent& event) const;
+  HintEntry EntryForKeyEvent(const WebKeyboardEvent& event,
+                             bool is_browser_command) const;
+  bool IsClickHintModeEntryKey(const WebKeyboardEvent& event) const;
+  bool IsRightClickHintModeEntryKey(const WebKeyboardEvent& event,
+                                    bool is_browser_command) const;
+  bool IsHoverHintModeEntryKey(const WebKeyboardEvent& event,
+                               bool is_browser_command) const;
+  bool IsScrollableHintModeEntryKey(const WebKeyboardEvent& event,
+                                    bool is_browser_command) const;
+  ActivationTarget ActivationTargetForClickEntryKey(
+      const WebKeyboardEvent& event) const;
   bool ShouldIgnoreEntryKeyForFocusedEditable() const;
   bool AppendTypedCharacter(const WebKeyboardEvent& event);
   WebInputEventResult HandleTypedPrefix();
@@ -57,6 +85,8 @@ class CORE_EXPORT Hints final : public GarbageCollected<Hints>,
   void ScheduleOverlayUpdate();
 
   bool active_ = false;
+  HintMode hint_mode_ = HintMode::kClick;
+  ActivationTarget activation_target_ = ActivationTarget::kCurrentTab;
   UChar pending_char_to_suppress_ = 0;
   String typed_prefix_;
   HeapVector<HintCandidate> candidates_;

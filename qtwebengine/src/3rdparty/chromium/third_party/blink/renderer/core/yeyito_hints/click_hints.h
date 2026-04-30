@@ -16,11 +16,34 @@ class LocalFrame;
 
 namespace click_hints {
 
+enum class CandidateGroup {
+  kAll,
+  kClickables = kAll,
+  kLinks,
+  kImages,
+  kMedia,
+  kUrl,
+  kInputs,
+  kHoverables,
+  kRightClickables,
+  kScrollables,
+};
+
+enum class ActivationAction {
+  kLeftClick,
+  kLeftClickNewTab,
+  kRightClick,
+  kHover,
+  kFocus,
+};
+
 void CollectCandidates(LocalFrame& frame,
-                       HeapVector<HintCandidate>& candidates);
+                       HeapVector<HintCandidate>& candidates,
+                       CandidateGroup group);
 void ActivateCandidate(LocalFrame& controller_frame,
                        Element& element,
-                       const gfx::RectF& rect);
+                       const gfx::RectF& rect,
+                       ActivationAction action);
 
 }  // namespace click_hints
 

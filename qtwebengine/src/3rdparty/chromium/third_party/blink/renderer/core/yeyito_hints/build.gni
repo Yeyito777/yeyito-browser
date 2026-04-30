@@ -8,6 +8,8 @@ blink_core_sources_yeyito_hints = [
   "click_hints.h",
   "hints.cc",
   "hints.h",
+  "hover_hints.cc",
+  "hover_hints.h",
   "labels.cc",
   "labels.h",
   "overlay.cc",

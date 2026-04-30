@@ -39,6 +39,7 @@ class TouchSelectionMenuWidget;
 
 QT_BEGIN_NAMESPACE
 
+class QLabel;
 class QMenu;
 class QPrinter;
 class QWebEngineView;
@@ -96,8 +97,19 @@ public:
     bool isEnabled() const override;
     bool isVisible() const override;
     QRect viewportRect() const override;
+    void ensureQutebrowserStatusOverlay();
+    void updateQutebrowserStatusOverlay();
+    void positionQutebrowserStatusOverlay();
+    void onQutebrowserModeChanged(const QString &oldMode, const QString &newMode);
+    void onQutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count);
     QWebEnginePage *page;
     QMetaObject::Connection m_pageConnection;
+    QMetaObject::Connection m_qutebrowserModeConnection;
+    QMetaObject::Connection m_qutebrowserStatusConnection;
+    QLabel *m_qutebrowserStatusOverlay = nullptr;
+    QString m_qutebrowserMode = QStringLiteral("normal");
+    QString m_qutebrowserKeychain;
+    QString m_qutebrowserCount;
     bool m_dragEntered;
     mutable bool m_ownsPage;
     QWebEngineContextMenuRequest *m_contextRequest;

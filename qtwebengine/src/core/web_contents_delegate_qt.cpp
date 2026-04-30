@@ -84,6 +84,7 @@ WebContentsDelegateQt::WebContentsDelegateQt(content::WebContents *webContents, 
     , m_findTextHelper(new FindTextHelper(webContents, adapterClient))
     , m_loadingState(determineLoadingState(webContents))
     , m_frameFocusedObserver(adapterClient)
+    , m_qutebrowserKeyDispatcher(this)
 {
     webContents->SetDelegate(this);
     Observe(webContents);
@@ -264,17 +265,9 @@ void WebContentsDelegateQt::LoadProgressChanged(double progress)
     }
 }
 
-content::KeyboardEventProcessingResult WebContentsDelegateQt::PreHandleKeyboardEvent(content::WebContents *, const input::NativeWebKeyboardEvent &event)
+content::KeyboardEventProcessingResult WebContentsDelegateQt::PreHandleKeyboardEvent(content::WebContents *source, const input::NativeWebKeyboardEvent &event)
 {
-    if (!event.os_event)
-        return content::KeyboardEventProcessingResult::NOT_HANDLED;
-
-    QKeyEvent *keyEvent = ToKeyEvent(event.os_event);
-    constexpr quint32 kQutebrowserBrowserCommandNativeModifier = 0x40000000;
-    if (keyEvent->nativeModifiers() & kQutebrowserBrowserCommandNativeModifier)
-        return content::KeyboardEventProcessingResult::NOT_HANDLED_IS_SHORTCUT;
-
-    return content::KeyboardEventProcessingResult::NOT_HANDLED;
+    return m_qutebrowserKeyDispatcher.preHandleKeyboardEvent(source, event);
 }
 
 bool WebContentsDelegateQt::HandleKeyboardEvent(content::WebContents *, const input::NativeWebKeyboardEvent &event)

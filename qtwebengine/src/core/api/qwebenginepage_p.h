@@ -118,6 +118,9 @@ public:
     void loadFinished(QWebEngineLoadingInfo info) override;
     void focusContainer() override;
     void unhandledKeyEvent(QKeyEvent *event) override;
+    void qutebrowserCommandRequested(const QString &command) override;
+    void qutebrowserModeChanged(const QString &oldMode, const QString &newMode) override;
+    void qutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count) override;
     QSharedPointer<QtWebEngineCore::WebContentsAdapter>
     adoptNewWindow(QSharedPointer<QtWebEngineCore::WebContentsAdapter> newWebContents,
                    WindowOpenDisposition disposition, bool userGesture,

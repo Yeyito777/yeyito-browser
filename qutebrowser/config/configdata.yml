@@ -435,7 +435,7 @@ auto_save.interval:
 
 auto_save.session:
   type: Bool
-  default: false
+  default: true
   desc: >-
     Always restore open sites when qutebrowser is reopened.
 
@@ -952,7 +952,7 @@ content.javascript.alert:
   desc: Show javascript alerts.
 
 content.javascript.clipboard:
-  default: ask
+  default: access
   type:
     name: JSClipboardPermission
     valid_values:
@@ -1211,7 +1211,7 @@ content.notifications.show_origin:
     Note that with the `qt` presenter, origins are never shown.
 
 content.pdfjs:
-  default: false
+  default: true
   type: Bool
   supports_pattern: true
   desc: >-
@@ -1481,7 +1481,7 @@ completion.use_best_match:
 ## devtools
 
 devtools.auto_focus:
-  default: false
+  default: true
   type: Bool
   desc: Automatically focus the developer tools when opened.
 
@@ -1525,12 +1525,7 @@ completion.open_categories:
     name: FlagList
     valid_values: [searchengines, quickmarks, bookmarks, history, filesystem]
     none_ok: true
-  default:
-    - searchengines
-    - quickmarks
-    - bookmarks
-    - history
-    - filesystem
+  default: [quickmarks, bookmarks, history, filesystem]
   desc: Which categories to show (in which order) in the :open completion.
 
 completion.favorite_paths:
@@ -1713,7 +1708,7 @@ hints.auto_follow_timeout:
     successful auto-follow.
 
 hints.border:
-  default: '0px solid #1d9bf0'
+  default: '1px solid #1d9bf0'
   type: String
   desc: CSS border value for hints.
 
@@ -2002,7 +1997,7 @@ input.insert_mode.leave_on_load:
     are navigating to, or the URL you are navigating from.
 
 input.links_included_in_focus_chain:
-  default: true
+  default: false
   type: Bool
   supports_pattern: true
   desc: Include hyperlinks in the keyboard focus chain when tabbing.
@@ -2372,7 +2367,7 @@ tabs.new_position.related:
     See `tabs.new_position.stacking` for controlling stacking behavior.
 
 tabs.new_position.unrelated:
-  default: last
+  default: next
   type: NewTabPosition
   desc: >-
     Position of new tabs which are not opened from another tab.
@@ -2408,7 +2403,7 @@ tabs.mode_on_change:
   desc: When switching tabs, what input mode is applied.
 
 tabs.position:
-  default: top
+  default: left
   type: Position
   desc: Position of the tab bar.
 
@@ -2520,7 +2515,7 @@ tabs.width.bar:
   renamed: tabs.width
 
 tabs.width:
-  default: 15%
+  default: 175
   type:
     name: PercOrInt
     minperc: 0
@@ -2822,7 +2817,7 @@ zoom.text_only:
 ## colors
 
 colors.completion.fg:
-  default: ["white", "white", "white"]
+  default: '#cce7ff'
   type:
     name: ListOrValue
     valtype: QtColor
@@ -2833,73 +2828,72 @@ colors.completion.fg:
     one for each column.
 
 colors.completion.odd.bg:
-  default: '#444444'
+  default: '#001020'
   type: QssColor
   desc: Background color of the completion widget for odd rows.
 
 colors.completion.even.bg:
-  default: '#333333'
+  default: '#000a1a'
   type: QssColor
   desc: Background color of the completion widget for even rows.
 
 colors.completion.category.fg:
-  default: white
+  default: '#eaf7ff'
   type: QtColor
   desc: Foreground color of completion widget category headers.
 
 colors.completion.category.bg:
-  default: 'qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #888888,
-    stop:1 #505050)'
+  default: '#001020'
   type: QssColor
   desc: Background color of the completion widget category headers.
 
 colors.completion.category.border.top:
-  default: black
+  default: '#002040'
   type: QssColor
   desc: Top border color of the completion widget category headers.
 
 colors.completion.category.border.bottom:
-  default: black
+  default: '#002040'
   type: QssColor
   desc: Bottom border color of the completion widget category headers.
 
 colors.completion.item.selected.fg:
-  default: black
+  default: '#00050f'
   type: QtColor
   desc: Foreground color of the selected completion item.
 
 colors.completion.item.selected.bg:
-  default: '#e8c000'
+  default: '#1d9bf0'
   type: QssColor
   desc: Background color of the selected completion item.
 
 colors.completion.item.selected.border.top:
-  default: '#bbbb00'
+  default: '#4fd0ff'
   type: QssColor
   desc: Top border color of the selected completion item.
 
 colors.completion.item.selected.border.bottom:
-  default: '#bbbb00'
+  default: '#0b72c2'
   type: QssColor
   desc: Bottom border color of the selected completion item.
 
 colors.completion.item.selected.match.fg:
-  default: '#ff4444'
+  default: '#eaf7ff'
   type: QtColor
   desc: Foreground color of the matched text in the selected completion item.
 
 colors.completion.match.fg:
-  default: '#ff4444'
+  default: '#eaf7ff'
   type: QtColor
   desc: Foreground color of the matched text in the completion.
 
 colors.completion.scrollbar.fg:
-  default: white
+  default: '#002040'
   type: QssColor
   desc: Color of the scrollbar handle in the completion view.
 
 colors.completion.scrollbar.bg:
-  default: '#333333'
+  default: '#00050f'
   type: QssColor
   desc: Color of the scrollbar in the completion view.
 
@@ -2933,7 +2927,7 @@ colors.contextmenu.menu.bg:
   type:
     name: QssColor
     none_ok: true
-  default: null
+  default: '#00050f'
   desc: >-
     Background color of the context menu.
 
@@ -2943,7 +2937,7 @@ colors.contextmenu.menu.fg:
   type:
     name: QssColor
     none_ok: true
-  default: null
+  default: '#ffffff'
   desc: >-
     Foreground color of the context menu.
 
@@ -2953,7 +2947,7 @@ colors.contextmenu.selected.bg:
   type:
     name: QssColor
     none_ok: true
-  default: null
+  default: '#1d9bf0'
   desc: >-
     Background color of the context menu's selected item.
 
@@ -2963,7 +2957,7 @@ colors.contextmenu.selected.fg:
   type:
     name: QssColor
     none_ok: true
-  default: null
+  default: '#00050f'
   desc: >-
     Foreground color of the context menu's selected item.
 
@@ -2973,7 +2967,7 @@ colors.contextmenu.disabled.bg:
   type:
     name: QssColor
     none_ok: true
-  default: null
+  default: '#000a1a'
   desc: >-
     Background color of disabled items in the context menu.
 
@@ -2983,7 +2977,7 @@ colors.contextmenu.disabled.fg:
   type:
     name: QssColor
     none_ok: true
-  default: null
+  default: '#cce7ff'
   desc: >-
     Foreground color of disabled items in the context menu.
 
@@ -2993,7 +2987,7 @@ colors.contextmenu.menu.border:
   type:
     name: QssColor
     none_ok: true
-  default: null
+  default: '#1d9bf0'
   desc: >-
     Border color of the context menu.
 
@@ -3011,47 +3005,47 @@ colors.contextmenu.alternate.bg:
     If set to null, no alternating colors are used.
 
 colors.downloads.bar.bg:
-  default: black
+  default: '#00050f'
   type: QssColor
   desc: Background color for the download bar.
 
 colors.downloads.start.fg:
-  default: white
+  default: '#1d9bf0'
   type: QtColor
   desc: Color gradient start for download text.
 
 colors.downloads.start.bg:
-  default: '#0000aa'
+  default: '#00050f'
   type: QtColor
   desc: Color gradient start for download backgrounds.
 
 colors.downloads.stop.fg:
-  default: white
+  default: '#00bcd4'
   type: QtColor
   desc: Color gradient end for download text.
 
 colors.downloads.stop.bg:
-  default: '#00aa00'
+  default: '#00050f'
   type: QtColor
   desc: Color gradient stop for download backgrounds.
 
 colors.downloads.system.fg:
-  default: rgb
+  default: none
   type: ColorSystem
   desc: Color gradient interpolation system for download text.
 
 colors.downloads.system.bg:
-  default: rgb
+  default: none
   type: ColorSystem
   desc: Color gradient interpolation system for download backgrounds.
 
 colors.downloads.error.fg:
-  default: white
+  default: '#0070b8'
   type: QtColor
   desc: Foreground color for downloads with errors.
 
 colors.downloads.error.bg:
-  default: red
+  default: '#00050f'
   type: QtColor
   desc: Background color for downloads with errors.
 
@@ -3069,213 +3063,213 @@ colors.hints.bg:
     Note that you can use a `rgba(...)` value for transparency.
 
 colors.hints.match.fg:
-  default: '#00050f'
+  default: '#eaf7ff'
   type: QtColor
   desc: Font color for the matched part of hints.
 
 colors.keyhint.fg:
-  default: '#FFFFFF'
+  default: '#cce7ff'
   type: QssColor
   desc: Text color for the keyhint widget.
 
 colors.keyhint.suffix.fg:
-  default: '#FFFF00'
+  default: '#eaf7ff'
   type: QssColor
   desc: Highlight color for keys to complete the current keychain.
 
 colors.keyhint.bg:
-  default: rgba(0, 0, 0, 80%)
+  default: '#000a1a'
   type: QssColor
   desc: Background color of the keyhint widget.
 
 colors.messages.error.fg:
-  default: white
+  default: '#0070b8'
   type: QssColor
   desc: Foreground color of an error message.
 
 colors.messages.error.bg:
-  default: red
+  default: '#001020'
   type: QssColor
   desc: Background color of an error message.
 
 colors.messages.error.border:
-  default: '#bb0000'
+  default: '#002040'
   type: QssColor
   desc: Border color of an error message.
 
 colors.messages.warning.fg:
-  default: black
+  default: '#00bcd4'
   type: QssColor
   desc: Foreground color of a warning message.
 
 colors.messages.warning.bg:
-  default: darkorange
+  default: '#001020'
   type: QssColor
   desc: Background color of a warning message.
 
 colors.messages.warning.border:
-  default: '#d47300'
+  default: '#002040'
   type: QssColor
   desc: Border color of a warning message.
 
 colors.messages.info.fg:
-  default: white
+  default: '#ffffff'
   type: QssColor
   desc: Foreground color of an info message.
 
 colors.messages.info.bg:
-  default: black
+  default: '#001020'
   type: QssColor
   desc: Background color of an info message.
 
 colors.messages.info.border:
-  default: '#333333'
+  default: '#002040'
   type: QssColor
   desc: Border color of an info message.
 
 colors.prompts.fg:
-  default: white
+  default: '#ffffff'
   type: QssColor
   desc: Foreground color for prompts.
 
 colors.prompts.border:
-  default: 1px solid gray
+  default: '1px solid #1d9bf0'
   type: String
   desc: Border used around UI elements in prompts.
 
 colors.prompts.bg:
-  default: '#444444'
+  default: '#001020'
   type: QssColor
   desc: Background color for prompts.
 
 colors.prompts.selected.fg:
-  default: white
+  default: '#eaf7ff'
   type: QssColor
   desc: Foreground color for the selected item in filename prompts.
 
 colors.prompts.selected.bg:
-  default: grey
+  default: '#4fd0ff'
   type: QssColor
   desc: Background color for the selected item in filename prompts.
 
 colors.statusbar.normal.fg:
-  default: white
+  default: '#ffffff'
   type: QssColor
   desc: Foreground color of the statusbar.
 
 colors.statusbar.normal.bg:
-  default: black
+  default: '#00050f'
   type: QssColor
   desc: Background color of the statusbar.
 
 colors.statusbar.insert.fg:
-  default: white
+  default: '#00050f'
   type: QssColor
   desc: Foreground color of the statusbar in insert mode.
 
 colors.statusbar.insert.bg:
-  default: darkgreen
+  default: '#1d9bf0'
   type: QssColor
   desc: Background color of the statusbar in insert mode.
 
 colors.statusbar.passthrough.fg:
-  default: white
+  default: '#eaf7ff'
   type: QssColor
   desc: Foreground color of the statusbar in passthrough mode.
 
 colors.statusbar.passthrough.bg:
-  default: darkblue
+  default: '#0070b8'
   type: QssColor
   desc: Background color of the statusbar in passthrough mode.
 
 colors.statusbar.private.fg:
-  default: white
+  default: '#cce7ff'
   type: QssColor
   desc: Foreground color of the statusbar in private browsing mode.
 
 colors.statusbar.private.bg:
-  default: '#666666'
+  default: '#001020'
   type: QssColor
   desc: Background color of the statusbar in private browsing mode.
 
 colors.statusbar.command.fg:
-  default: white
+  default: '#ffffff'
   type: QssColor
   desc: Foreground color of the statusbar in command mode.
 
 colors.statusbar.command.bg:
-  default: black
+  default: '#000a1a'
   type: QssColor
   desc: Background color of the statusbar in command mode.
 
 colors.statusbar.command.private.fg:
-  default: white
+  default: '#cce7ff'
   type: QssColor
   desc: Foreground color of the statusbar in private browsing + command mode.
 
 colors.statusbar.command.private.bg:
-  default: darkslategray
+  default: '#000a1a'
   type: QssColor
   desc: Background color of the statusbar in private browsing + command mode.
 
 colors.statusbar.caret.fg:
-  default: white
+  default: '#eaf7ff'
   type: QssColor
   desc: Foreground color of the statusbar in caret mode.
 
 colors.statusbar.caret.bg:
-  default: purple
+  default: '#000a1a'
   type: QssColor
   desc: Background color of the statusbar in caret mode.
 
 colors.statusbar.caret.selection.fg:
-  default: white
+  default: '#eaf7ff'
   type: QssColor
   desc: Foreground color of the statusbar in caret mode with a selection.
 
 colors.statusbar.caret.selection.bg:
-  default: '#a12dff'
+  default: '#000a1a'
   type: QssColor
   desc: Background color of the statusbar in caret mode with a selection.
 
 colors.statusbar.progress.bg:
-  default: white
+  default: '#4fd0ff'
   type: QssColor
   desc: Background color of the progress bar.
 
 colors.statusbar.url.fg:
-  default: white
+  default: '#cce7ff'
   type: QssColor
   desc: Default foreground color of the URL in the statusbar.
 
 colors.statusbar.url.error.fg:
-  default: orange
+  default: '#0070b8'
   type: QssColor
   desc: Foreground color of the URL in the statusbar on error.
 
 colors.statusbar.url.hover.fg:
-  default: aqua
+  default: '#008fe0'
   type: QssColor
   desc: Foreground color of the URL in the statusbar for hovered links.
 
 colors.statusbar.url.success.http.fg:
-  default: white
+  default: '#00bcd4'
   type: QssColor
   desc: Foreground color of the URL in the statusbar on successful load (http).
 
 colors.statusbar.url.success.https.fg:
-  default: lime
+  default: '#1d9bf0'
   type: QssColor
   desc: Foreground color of the URL in the statusbar on successful load
     (https).
 
 colors.statusbar.url.warn.fg:
-  default: yellow
+  default: '#0b72c2'
   type: QssColor
   desc: "Foreground color of the URL in the statusbar when there's a warning."
 
 colors.tabs.bar.bg:
-  default: '#555555'
+  default: '#000a1a'
   type: QssColor
   desc: Background color of the tab bar.
 
@@ -3290,97 +3284,97 @@ colors.tabs.indicator.stop:
   desc: Color gradient end for the tab indicator.
 
 colors.tabs.indicator.error:
-  default: '#ff0000'
+  default: '#0070b8'
   type: QtColor
   desc: Color for the tab indicator on errors.
 
 colors.tabs.indicator.system:
-  default: rgb
+  default: none
   type: ColorSystem
   desc: Color gradient interpolation system for the tab indicator.
 
 colors.tabs.odd.fg:
-  default: white
+  default: '#cce7ff'
   type: QtColor
   desc: Foreground color of unselected odd tabs.
 
 colors.tabs.odd.bg:
-  default: grey
+  default: '#001020'
   type: QtColor
   desc: Background color of unselected odd tabs.
 
 colors.tabs.even.fg:
-  default: white
+  default: '#cce7ff'
   type: QtColor
   desc: Foreground color of unselected even tabs.
 
 colors.tabs.even.bg:
-  default: darkgrey
+  default: '#001020'
   type: QtColor
   desc: Background color of unselected even tabs.
 
 colors.tabs.selected.odd.fg:
-  default: white
+  default: '#ffffff'
   type: QtColor
   desc: Foreground color of selected odd tabs.
 
 colors.tabs.selected.odd.bg:
-  default: black
+  default: '#1d9bf0'
   type: QtColor
   desc: Background color of selected odd tabs.
 
 colors.tabs.selected.even.fg:
-  default: white
+  default: '#ffffff'
   type: QtColor
   desc: Foreground color of selected even tabs.
 
 colors.tabs.selected.even.bg:
-  default: black
+  default: '#1d9bf0'
   type: QtColor
   desc: Background color of selected even tabs.
 
 colors.tabs.pinned.odd.fg:
-  default: white
+  default: '#cce7ff'
   type: QtColor
   desc: Foreground color of pinned unselected odd tabs.
 
 colors.tabs.pinned.odd.bg:
-  default: seagreen
+  default: '#001020'
   type: QtColor
   desc: Background color of pinned unselected odd tabs.
 
 colors.tabs.pinned.even.fg:
-  default: white
+  default: '#cce7ff'
   type: QtColor
   desc: Foreground color of pinned unselected even tabs.
 
 colors.tabs.pinned.even.bg:
-  default: darkseagreen
+  default: '#001020'
   type: QtColor
   desc: Background color of pinned unselected even tabs.
 
 colors.tabs.pinned.selected.odd.fg:
-  default: white
+  default: '#ffffff'
   type: QtColor
   desc: Foreground color of pinned selected odd tabs.
 
 colors.tabs.pinned.selected.odd.bg:
-  default: black
+  default: '#1d9bf0'
   type: QtColor
   desc: Background color of pinned selected odd tabs.
 
 colors.tabs.pinned.selected.even.fg:
-  default: white
+  default: '#ffffff'
   type: QtColor
   desc: Foreground color of pinned selected even tabs.
 
 colors.tabs.pinned.selected.even.bg:
-  default: black
+  default: '#1d9bf0'
   type: QtColor
   desc: Background color of pinned selected even tabs.
 
 colors.webpage.bg:
-  default: white
+  default: '#00050f'
   type:
     name: QtColor
     none_ok: true

@@ -20,6 +20,7 @@ from qutebrowser.qt.webenginecore import (
 )
 
 from qutebrowser.browser import shared
+from qutebrowser.commands import cmdexc, runners
 from qutebrowser.browser.webengine import webenginesettings, certificateerror
 from qutebrowser.config import config
 from qutebrowser.utils import log, debug, usertypes, qtutils
@@ -155,7 +156,7 @@ class WebEngineView(QWebEngineView):
         else:
             profile = webenginesettings.default_profile
         page = WebEnginePage(theme_color=theme_color, profile=profile,
-                             parent=self)
+                             win_id=win_id, parent=self)
         self.setPage(page)
 
     def render_widget(self):
@@ -349,8 +350,9 @@ class WebEnginePage(QWebEnginePage):
             usertypes.NavigationRequest.Type.redirect,
     }
 
-    def __init__(self, *, theme_color, profile, parent=None):
+    def __init__(self, *, theme_color, profile, win_id, parent=None):
         super().__init__(profile, parent)
+        self._win_id = win_id
         self._is_shutting_down = False
         self._theme_color = theme_color
         self._set_bg_color()
@@ -358,6 +360,57 @@ class WebEnginePage(QWebEnginePage):
         if machinery.IS_QT6:
             self.certificateError.connect(self._handle_certificate_error)
             # Qt 5: Overridden method instead of signal
+        self.qutebrowserCommandRequested.connect(
+            self._run_chromium_requested_qutebrowser_command)
+        if hasattr(self, 'qutebrowserModeChanged'):
+            self.qutebrowserModeChanged.connect(
+                self._on_chromium_qutebrowser_mode_changed)
+        if hasattr(self, 'qutebrowserStatusChanged'):
+            self.qutebrowserStatusChanged.connect(
+                self._on_chromium_qutebrowser_status_changed)
+
+    def _chromium_mode(self, name: str) -> Optional[usertypes.KeyMode]:
+        """Convert Chromium's string mode names to qutebrowser modes."""
+        try:
+            return usertypes.KeyMode[name]
+        except KeyError:
+            log.webview.warning(
+                "Chromium reported unknown qutebrowser mode {!r}".format(name))
+            return None
+
+    @pyqtSlot(str, str)
+    def _on_chromium_qutebrowser_mode_changed(self, old_name: str,
+                                               new_name: str) -> None:
+        """Observe Chromium-owned page mode changes.
+
+        QtWebEngine's widget chrome now owns the page-mode status overlay, so
+        the old qutebrowser MainWindow statusbar is no longer driven from this
+        bridge. Keep this slot for validation/logging and for older installs
+        where the C++ signal exists but the native overlay has not been rebuilt.
+        """
+        self._chromium_mode(old_name)
+        self._chromium_mode(new_name)
+
+    @pyqtSlot(str, str, str)
+    def _on_chromium_qutebrowser_status_changed(self, mode_name: str,
+                                                 keychain: str,
+                                                 count: str) -> None:
+        """Observe Chromium-owned keychain/count changes.
+
+        Display is handled by QtWebEngine chrome.
+        """
+        self._chromium_mode(mode_name)
+        _ = keychain, count
+
+    @pyqtSlot(str)
+    def _run_chromium_requested_qutebrowser_command(self, command: str) -> None:
+        """Run a qutebrowser chrome/UI command requested by Chromium keys."""
+        try:
+            runners.CommandRunner(self._win_id).run(command, safely=True)
+        except cmdexc.Error as exc:
+            log.webview.warning(
+                "Chromium qutebrowser command {!r} failed: {}".format(
+                    command, exc))
 
     @config.change_filter('colors.webpage.bg')
     def _set_bg_color(self):

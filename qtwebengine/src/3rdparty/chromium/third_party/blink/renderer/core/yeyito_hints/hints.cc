@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/yeyito_hints/click_hints.h"
+#include "third_party/blink/renderer/core/yeyito_hints/hover_hints.h"
 #include "third_party/blink/renderer/core/yeyito_hints/labels.h"
 #include "third_party/blink/renderer/core/yeyito_hints/overlay.h"
 #include "third_party/blink/renderer/platform/windows_keyboard_codes.h"
@@ -41,6 +42,11 @@ bool HasOnlyNoOrShiftModifiers(const WebKeyboardEvent& event) {
   return (event.GetModifiers() &
           (WebInputEvent::kControlKey | WebInputEvent::kAltKey |
            WebInputEvent::kMetaKey)) == 0;
+}
+
+bool HasOnlyControlModifier(const WebKeyboardEvent& event) {
+  return (event.GetModifiers() & WebKeyboardEvent::kKeyModifiers) ==
+         WebInputEvent::kControlKey;
 }
 
 bool IsASCIIHintKey(UChar c) {
@@ -121,12 +127,19 @@ WebInputEventResult Hints::HandleKeyEvent(const WebKeyboardEvent& event) {
         event.GetType() != WebInputEvent::Type::kKeyDown) {
       return WebInputEventResult::kNotHandled;
     }
-    if (!IsHintModeEntryKey(event) ||
-        (!IsQutebrowserBrowserCommand(event) &&
-         ShouldIgnoreEntryKeyForFocusedEditable())) {
+
+    const bool is_browser_command = IsQutebrowserBrowserCommand(event);
+    const HintEntry entry = EntryForKeyEvent(event, is_browser_command);
+    if (!entry.is_entry ||
+        (!is_browser_command && ShouldIgnoreEntryKeyForFocusedEditable())) {
       return WebInputEventResult::kNotHandled;
     }
-    Start();
+
+    UChar entry_char = CharacterFromEvent(event);
+    Start(entry.mode, entry.target);
+    if (IsClickHintModeEntryKey(event) && IsASCIIHintKey(entry_char)) {
+      pending_char_to_suppress_ = LowerASCIIHintKey(entry_char);
+    }
     return WebInputEventResult::kHandledSuppressed;
   }
 
@@ -188,8 +201,10 @@ WebInputEventResult Hints::HandleTypedPrefix() {
   return WebInputEventResult::kHandledSuppressed;
 }
 
-void Hints::Start() {
+void Hints::Start(HintMode mode, ActivationTarget target) {
   active_ = true;
+  hint_mode_ = mode;
+  activation_target_ = target;
   pending_char_to_suppress_ = 0;
   typed_prefix_ = String();
   CollectCandidates();
@@ -231,8 +246,27 @@ void Hints::PaintOverlay(GraphicsContext& context) {
 
 void Hints::CollectCandidates() {
   candidates_.clear();
-  if (LocalFrame* frame = GetSupplementable()) {
-    click_hints::CollectCandidates(*frame, candidates_);
+  LocalFrame* frame = GetSupplementable();
+  if (!frame) {
+    return;
+  }
+
+  switch (hint_mode_) {
+    case HintMode::kClick: {
+      const click_hints::CandidateGroup group =
+          activation_target_ == ActivationTarget::kRightClick
+              ? click_hints::CandidateGroup::kRightClickables
+              : click_hints::CandidateGroup::kClickables;
+      click_hints::CollectCandidates(*frame, candidates_, group);
+      return;
+    }
+    case HintMode::kHover:
+      hover_hints::CollectCandidates(*frame, candidates_);
+      return;
+    case HintMode::kFocus:
+      click_hints::CollectCandidates(*frame, candidates_,
+                                     click_hints::CandidateGroup::kScrollables);
+      return;
   }
 }
 
@@ -244,8 +278,54 @@ void Hints::AssignLabels() {
   }
 }
 
-bool Hints::IsHintModeEntryKey(const WebKeyboardEvent& event) const {
-  return HasNoKeyModifiers(event) && event.windows_key_code == VK_F;
+Hints::HintEntry Hints::EntryForKeyEvent(
+    const WebKeyboardEvent& event,
+    bool is_browser_command) const {
+  if (IsClickHintModeEntryKey(event)) {
+    return {true, HintMode::kClick, ActivationTargetForClickEntryKey(event)};
+  }
+
+  if (IsRightClickHintModeEntryKey(event, is_browser_command)) {
+    return {true, HintMode::kClick, ActivationTarget::kRightClick};
+  }
+
+  if (IsHoverHintModeEntryKey(event, is_browser_command)) {
+    return {true, HintMode::kHover, ActivationTarget::kCurrentTab};
+  }
+
+  if (IsScrollableHintModeEntryKey(event, is_browser_command)) {
+    return {true, HintMode::kFocus, ActivationTarget::kCurrentTab};
+  }
+
+  return {};
+}
+
+bool Hints::IsClickHintModeEntryKey(const WebKeyboardEvent& event) const {
+  return HasOnlyNoOrShiftModifiers(event) && event.windows_key_code == VK_F;
+}
+
+bool Hints::IsRightClickHintModeEntryKey(const WebKeyboardEvent& event,
+                                         bool is_browser_command) const {
+  return is_browser_command && HasOnlyControlModifier(event) &&
+         event.windows_key_code == VK_J;
+}
+
+bool Hints::IsHoverHintModeEntryKey(const WebKeyboardEvent& event,
+                                    bool is_browser_command) const {
+  return is_browser_command && HasOnlyControlModifier(event) &&
+         event.windows_key_code == VK_K;
+}
+
+bool Hints::IsScrollableHintModeEntryKey(const WebKeyboardEvent& event,
+                                         bool is_browser_command) const {
+  return is_browser_command && HasOnlyControlModifier(event) &&
+         event.windows_key_code == VK_SPACE;
+}
+
+Hints::ActivationTarget Hints::ActivationTargetForClickEntryKey(
+    const WebKeyboardEvent& event) const {
+  return HasNoKeyModifiers(event) ? ActivationTarget::kCurrentTab
+                                  : ActivationTarget::kNewTab;
 }
 
 bool Hints::ShouldIgnoreEntryKeyForFocusedEditable() const {
@@ -279,12 +359,34 @@ void Hints::ActivateCandidate(HintCandidate& candidate) {
   LocalFrame* frame = GetSupplementable();
   Element* element = candidate.element.Get();
   const gfx::RectF rect = candidate.viewport_rect;
+  const HintMode mode = hint_mode_;
+  const ActivationTarget target = activation_target_;
 
   Stop();
   if (!frame || !element) {
     return;
   }
-  click_hints::ActivateCandidate(*frame, *element, rect);
+
+  switch (mode) {
+    case HintMode::kClick: {
+      click_hints::ActivationAction action =
+          click_hints::ActivationAction::kLeftClick;
+      if (target == ActivationTarget::kNewTab) {
+        action = click_hints::ActivationAction::kLeftClickNewTab;
+      } else if (target == ActivationTarget::kRightClick) {
+        action = click_hints::ActivationAction::kRightClick;
+      }
+      click_hints::ActivateCandidate(*frame, *element, rect, action);
+      return;
+    }
+    case HintMode::kHover:
+      hover_hints::ActivateCandidate(*frame, *element, rect);
+      return;
+    case HintMode::kFocus:
+      click_hints::ActivateCandidate(*frame, *element, rect,
+                                     click_hints::ActivationAction::kFocus);
+      return;
+  }
 }
 
 void Hints::ScheduleOverlayUpdate() {

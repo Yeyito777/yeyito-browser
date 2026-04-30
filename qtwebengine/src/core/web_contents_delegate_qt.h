@@ -11,6 +11,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 
 #include "net/network_request_buffer.h"
+#include "qutebrowser_key_dispatcher.h"
 #include "web_contents_adapter_client.h"
 
 #include <QtCore/qlist.h>
@@ -199,6 +200,7 @@ private:
     QSharedPointer<FilePickerController> m_filePickerController;
     LoadingState m_loadingState;
     FrameFocusedObserver m_frameFocusedObserver;
+    QutebrowserKeyDispatcher m_qutebrowserKeyDispatcher;
 
     QString m_title;
     int m_audioStreamCount = 0;

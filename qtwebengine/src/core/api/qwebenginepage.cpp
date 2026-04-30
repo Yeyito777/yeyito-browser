@@ -313,6 +313,24 @@ void QWebEnginePagePrivate::unhandledKeyEvent(QKeyEvent *event)
     }
 }
 
+void QWebEnginePagePrivate::qutebrowserCommandRequested(const QString &command)
+{
+    Q_Q(QWebEnginePage);
+    Q_EMIT q->qutebrowserCommandRequested(command);
+}
+
+void QWebEnginePagePrivate::qutebrowserModeChanged(const QString &oldMode, const QString &newMode)
+{
+    Q_Q(QWebEnginePage);
+    Q_EMIT q->qutebrowserModeChanged(oldMode, newMode);
+}
+
+void QWebEnginePagePrivate::qutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count)
+{
+    Q_Q(QWebEnginePage);
+    Q_EMIT q->qutebrowserStatusChanged(mode, keychain, count);
+}
+
 QSharedPointer<WebContentsAdapter>
 QWebEnginePagePrivate::adoptNewWindow(QSharedPointer<WebContentsAdapter> newWebContents,
                                       WindowOpenDisposition disposition, bool userGesture,

@@ -165,6 +165,9 @@ public:
     virtual void loadFinished(QWebEngineLoadingInfo info) = 0;
     virtual void focusContainer() = 0;
     virtual void unhandledKeyEvent(QKeyEvent *event) = 0;
+    virtual void qutebrowserCommandRequested(const QString &command) = 0;
+    virtual void qutebrowserModeChanged(const QString &oldMode, const QString &newMode) = 0;
+    virtual void qutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count) = 0;
     virtual QSharedPointer<WebContentsAdapter>
     adoptNewWindow(QSharedPointer<WebContentsAdapter> newWebContents,
                    WindowOpenDisposition disposition, bool userGesture,

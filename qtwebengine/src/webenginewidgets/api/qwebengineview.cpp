@@ -28,6 +28,7 @@
 #include <QVBoxLayout>
 #include <QKeyEvent>
 #include <QIcon>
+#include <QLabel>
 #include <QStyle>
 #include <QGuiApplication>
 #include <QQuickWidget>
@@ -399,6 +400,10 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
         QObject::disconnect(oldPage, &QWebEnginePage::loadFinished, q, &QWebEngineView::loadFinished);
         QObject::disconnect(oldPage, &QWebEnginePage::selectionChanged, q, &QWebEngineView::selectionChanged);
         QObject::disconnect(oldPage, &QWebEnginePage::renderProcessTerminated, q, &QWebEngineView::renderProcessTerminated);
+        QObject::disconnect(m_qutebrowserModeConnection);
+        QObject::disconnect(m_qutebrowserStatusConnection);
+        m_qutebrowserModeConnection = {};
+        m_qutebrowserStatusConnection = {};
     }
 
     if (newPage) {
@@ -411,6 +416,14 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
         QObject::connect(newPage, &QWebEnginePage::loadFinished, q, &QWebEngineView::loadFinished);
         QObject::connect(newPage, &QWebEnginePage::selectionChanged, q, &QWebEngineView::selectionChanged);
         QObject::connect(newPage, &QWebEnginePage::renderProcessTerminated, q, &QWebEngineView::renderProcessTerminated);
+        m_qutebrowserModeConnection = QObject::connect(newPage, &QWebEnginePage::qutebrowserModeChanged,
+                                                       q, [this](const QString &oldMode, const QString &newMode) {
+            onQutebrowserModeChanged(oldMode, newMode);
+        });
+        m_qutebrowserStatusConnection = QObject::connect(newPage, &QWebEnginePage::qutebrowserStatusChanged,
+                                                         q, [this](const QString &mode, const QString &keychain, const QString &count) {
+            onQutebrowserStatusChanged(mode, keychain, count);
+        });
         newPage->setVisible(q->isVisible());
     }
 
@@ -433,6 +446,115 @@ void QWebEngineViewPrivate::pageChanged(QWebEnginePage *oldPage, QWebEnginePage 
 
     if ((oldPage && oldPage->hasSelection()) || (newPage && newPage->hasSelection()))
         Q_EMIT q->selectionChanged();
+
+    m_qutebrowserMode = QStringLiteral("normal");
+    m_qutebrowserKeychain.clear();
+    m_qutebrowserCount.clear();
+    updateQutebrowserStatusOverlay();
+}
+
+static QString qutebrowserModeDisplayName(QString mode)
+{
+    mode.replace(QLatin1Char('_'), QLatin1Char('-'));
+    return mode.toUpper();
+}
+
+void QWebEngineViewPrivate::ensureQutebrowserStatusOverlay()
+{
+    Q_Q(QWebEngineView);
+    if (m_qutebrowserStatusOverlay)
+        return;
+
+    auto *label = new QLabel(q);
+    label->setObjectName(QStringLiteral("QutebrowserChromeStatusbar"));
+    label->setAttribute(Qt::WA_TransparentForMouseEvents);
+    label->setFocusPolicy(Qt::NoFocus);
+    label->setTextFormat(Qt::PlainText);
+    label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    label->setMargin(0);
+    QFont font(QStringLiteral("JetBrains Mono"));
+    font.setStyleHint(QFont::Monospace);
+    font.setPointSize(10);
+    label->setFont(font);
+    label->setFixedHeight(22);
+    label->hide();
+    m_qutebrowserStatusOverlay = label;
+    updateQutebrowserStatusOverlay();
+}
+
+void QWebEngineViewPrivate::positionQutebrowserStatusOverlay()
+{
+    ensureQutebrowserStatusOverlay();
+    Q_Q(QWebEngineView);
+    const int height = m_qutebrowserStatusOverlay->height() > 0 ? m_qutebrowserStatusOverlay->height() : 22;
+    m_qutebrowserStatusOverlay->setGeometry(0, qMax(0, q->height() - height), q->width(), height);
+    m_qutebrowserStatusOverlay->raise();
+}
+
+void QWebEngineViewPrivate::updateQutebrowserStatusOverlay()
+{
+    ensureQutebrowserStatusOverlay();
+
+    const QString keyText = m_qutebrowserCount + m_qutebrowserKeychain;
+    const bool hasMode = m_qutebrowserMode != QStringLiteral("normal") && !m_qutebrowserMode.isEmpty();
+    const bool hasKeyText = !keyText.isEmpty();
+
+    if (!hasMode && !hasKeyText) {
+        m_qutebrowserStatusOverlay->hide();
+        return;
+    }
+
+    QString text;
+    if (hasMode)
+        text = QStringLiteral("-- %1 MODE --").arg(qutebrowserModeDisplayName(m_qutebrowserMode));
+    if (hasKeyText)
+        text += (text.isEmpty() ? QString() : QStringLiteral("  ")) + keyText;
+
+    QString fg = QStringLiteral("#ffffff");
+    QString bg = QStringLiteral("#00050f");
+    if (m_qutebrowserMode == QStringLiteral("insert")) {
+        fg = QStringLiteral("#00050f");
+        bg = QStringLiteral("#1d9bf0");
+    } else if (m_qutebrowserMode == QStringLiteral("passthrough")) {
+        fg = QStringLiteral("#eaf7ff");
+        bg = QStringLiteral("#0070b8");
+    } else if (m_qutebrowserMode == QStringLiteral("command") ||
+               m_qutebrowserMode == QStringLiteral("caret") ||
+               m_qutebrowserMode == QStringLiteral("hint")) {
+        fg = QStringLiteral("#ffffff");
+        bg = QStringLiteral("#000a1a");
+    } else if (m_qutebrowserMode == QStringLiteral("prompt") ||
+               m_qutebrowserMode == QStringLiteral("yesno")) {
+        fg = QStringLiteral("#ffffff");
+        bg = QStringLiteral("#001020");
+    }
+
+    m_qutebrowserStatusOverlay->setStyleSheet(QStringLiteral(
+            "QLabel#QutebrowserChromeStatusbar {"
+            "background: %1; color: %2; padding-left: 6px; padding-right: 6px;"
+            "border: 0px; }"
+    ).arg(bg, fg));
+    m_qutebrowserStatusOverlay->setText(text);
+    positionQutebrowserStatusOverlay();
+    m_qutebrowserStatusOverlay->show();
+}
+
+void QWebEngineViewPrivate::onQutebrowserModeChanged(const QString &oldMode, const QString &newMode)
+{
+    Q_UNUSED(oldMode);
+    m_qutebrowserMode = newMode;
+    m_qutebrowserKeychain.clear();
+    m_qutebrowserCount.clear();
+    updateQutebrowserStatusOverlay();
+}
+
+void QWebEngineViewPrivate::onQutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count)
+{
+    if (!mode.isEmpty())
+        m_qutebrowserMode = mode;
+    m_qutebrowserKeychain = keychain;
+    m_qutebrowserCount = count;
+    updateQutebrowserStatusOverlay();
 }
 
 void QWebEngineViewPrivate::widgetChanged(QtWebEngineCore::WebEngineQuickWidget *oldWidget,
@@ -463,6 +585,8 @@ void QWebEngineViewPrivate::widgetChanged(QtWebEngineCore::WebEngineQuickWidget 
             newWidget->setFocus();
         newWidget->show();
     }
+
+    positionQutebrowserStatusOverlay();
 }
 
 void QWebEngineViewPrivate::contextMenuRequested(QWebEngineContextMenuRequest *request)
@@ -1254,7 +1378,12 @@ bool QWebEngineView::event(QEvent *ev)
         return true;
     }
 
-    return QWidget::event(ev);
+    const bool handled = QWidget::event(ev);
+    if (ev->type() == QEvent::Resize) {
+        Q_D(QWebEngineView);
+        d->positionQutebrowserStatusOverlay();
+    }
+    return handled;
 }
 
 /*!

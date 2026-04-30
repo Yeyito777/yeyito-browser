@@ -459,6 +459,7 @@ jumbo_component("core") {
   jumbo_excluded_sources += rebase_path([
                                           "click_hints.cc",
                                           "hints.cc",
+                                          "hover_hints.cc",
                                           "labels.cc",
                                           "overlay.cc",
                                         ],
