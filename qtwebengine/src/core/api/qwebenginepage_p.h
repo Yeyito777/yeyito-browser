@@ -68,7 +68,6 @@ public:
     virtual bool isEnabled() const = 0;
     virtual bool isVisible() const = 0;
     virtual QRect viewportRect() const = 0;
-    virtual bool qutebrowserHandleCommand(const QString &command) { Q_UNUSED(command); return false; }
     virtual void focusContainer() = 0;
     virtual void unhandledKeyEvent(QKeyEvent *event) = 0;
     virtual bool passOnFocus(bool reverse) = 0;
@@ -119,9 +118,6 @@ public:
     void loadFinished(QWebEngineLoadingInfo info) override;
     void focusContainer() override;
     void unhandledKeyEvent(QKeyEvent *event) override;
-    void qutebrowserCommandRequested(const QString &command) override;
-    void qutebrowserModeChanged(const QString &oldMode, const QString &newMode) override;
-    void qutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count) override;
     QSharedPointer<QtWebEngineCore::WebContentsAdapter>
     adoptNewWindow(QSharedPointer<QtWebEngineCore::WebContentsAdapter> newWebContents,
                    WindowOpenDisposition disposition, bool userGesture,

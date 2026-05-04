@@ -179,7 +179,6 @@ foreach(arch ${archs})
                 renderer_host/web_engine_page_host.cpp renderer_host/web_engine_page_host.h
                 request_controller.h
                 resource_bundle_qt.cpp
-                qutebrowser_key_dispatcher.cpp qutebrowser_key_dispatcher.h
                 select_file_dialog_factory_qt.cpp select_file_dialog_factory_qt.h
                 smooth_scroll_controller.cpp smooth_scroll_controller.h
                 touch_handle_drawable_client.h

@@ -24,17 +24,6 @@ from qutebrowser.misc import objects
 INPUT_MODES = [usertypes.KeyMode.insert, usertypes.KeyMode.passthrough]
 PROMPT_MODES = [usertypes.KeyMode.prompt, usertypes.KeyMode.yesno]
 
-# Temporary qutebrowser -> Chromium migration bridge.
-#
-# qutebrowser is still the source of truth for modes while hinting is moving
-# into Chromium piece by piece. For native Chromium features, qutebrowser sends
-# synthetic QKeyEvents marked with its current mode-layer decision. QtWebEngine
-# translates these private native-modifier bits into Chromium-side intent, so
-# Blink can avoid guessing from focused DOM state. Remove once qutebrowser's
-# mode/keybinding layer lives in Chromium.
-CHROMIUM_BROWSER_COMMAND_NATIVE_MODIFIER = 0x40000000
-CHROMIUM_PAGE_INPUT_NATIVE_MODIFIER = 0x20000000
-
 # FIXME:mypy TypedDict?
 ParserDictType = MutableMapping[usertypes.KeyMode, basekeyparser.BaseKeyParser]
 
@@ -88,13 +77,6 @@ def init(win_id: int, parent: QObject) -> 'ModeManager':
     objreg.register('hintmanager', hintmanager, scope='window',
                     window=win_id, command_only=True)
     modeman.hintmanager = hintmanager
-    tabbed_browser = objreg.get('tabbed-browser', scope='window',
-                                window=win_id, default=None)
-    if tabbed_browser is not None:
-        tabbed_browser.cur_load_started.connect(
-            modeman.leave_chromium_hint_passthrough)
-        tabbed_browser.cur_url_changed.connect(
-            modeman.leave_chromium_hint_passthrough)
 
     log_sensitive_keys = 'log-sensitive-keys' in objects.debug_flags
 
@@ -258,7 +240,6 @@ class ModeManager(QObject):
         self._prev_mode = usertypes.KeyMode.normal
         self.mode = usertypes.KeyMode.normal
         self._releaseevents_to_pass: set[KeyEvent] = set()
-        self._chromium_hint_passthrough = False
         # Set after __init__
         self.hintmanager = cast(hints.HintManager, None)
 
@@ -278,45 +259,6 @@ class ModeManager(QObject):
         """
         curmode = self.mode
         parser = self.parsers[curmode]
-
-        if self.is_chromium_browser_command_event(event):
-            focus_widget = objects.qapp.focusWidget()
-            log.modes.debug(
-                "Chromium browser-command bridge event: dry_run: {} "
-                "--> filter: False (focused: {})".format(
-                    dry_run, qtutils.qobj_repr(focus_widget)))
-            return False
-
-        if (self._chromium_hint_passthrough and
-                curmode != usertypes.KeyMode.normal):
-            self._chromium_hint_passthrough = False
-
-        chromium_hint_entry_key = self._is_chromium_hint_entry_key(event,
-                                                                   curmode)
-        if curmode == usertypes.KeyMode.normal and chromium_hint_entry_key:
-            if not dry_run:
-                self._releaseevents_to_pass.add(KeyEvent.from_event(event))
-                self._chromium_hint_passthrough = True
-            focus_widget = objects.qapp.focusWidget()
-            log.modes.debug(
-                "Chromium hint entry bridge: dry_run: {} --> "
-                "filter: False (focused: {})".format(
-                    dry_run, qtutils.qobj_repr(focus_widget)))
-            return False
-
-        if (curmode == usertypes.KeyMode.normal and
-                self._chromium_hint_passthrough):
-            if not dry_run:
-                self._releaseevents_to_pass.add(KeyEvent.from_event(event))
-                if event.key() == Qt.Key.Key_Escape:
-                    self._chromium_hint_passthrough = False
-            focus_widget = objects.qapp.focusWidget()
-            log.modes.debug(
-                "Chromium hint passthrough bridge: dry_run: {} --> "
-                "filter: False (focused: {})".format(
-                    dry_run, qtutils.qobj_repr(focus_widget)))
-            return False
-
         if curmode != usertypes.KeyMode.insert:
             log.modes.debug("got keypress in mode {} - delegating to "
                             "{}".format(curmode, utils.qualname(parser)))
@@ -358,52 +300,6 @@ class ModeManager(QObject):
                                 parser.passthrough, is_non_alnum, dry_run,
                                 filter_this, qtutils.qobj_repr(focus_widget)))
         return filter_this
-
-    def leave_chromium_hint_passthrough(self, *args: object) -> None:
-        """Stop forwarding keys for Chromium-native hint mode."""
-        self._chromium_hint_passthrough = False
-
-    def is_chromium_browser_command_event(self, event: QKeyEvent) -> bool:
-        """Return whether the event is already marked for Chromium."""
-        return bool(event.nativeModifiers() &
-                    CHROMIUM_BROWSER_COMMAND_NATIVE_MODIFIER)
-
-    def chromium_hint_bridge_modifier(self, event: QKeyEvent) -> int:
-        """Return the native marker for qutebrowser's hint-entry decision."""
-        if event.nativeModifiers() & (
-                CHROMIUM_BROWSER_COMMAND_NATIVE_MODIFIER |
-                CHROMIUM_PAGE_INPUT_NATIVE_MODIFIER):
-            return 0
-        if not self._is_chromium_hint_key(event):
-            return 0
-        if self.mode == usertypes.KeyMode.normal:
-            return CHROMIUM_BROWSER_COMMAND_NATIVE_MODIFIER
-        if self.mode in INPUT_MODES:
-            return CHROMIUM_PAGE_INPUT_NATIVE_MODIFIER
-        return 0
-
-    def begin_chromium_hint_passthrough(self) -> None:
-        """Start forwarding keys for a Chromium-native hint session."""
-        self._chromium_hint_passthrough = True
-
-    def _is_chromium_hint_entry_key(self, event: QKeyEvent,
-                                    mode: usertypes.KeyMode) -> bool:
-        """Return whether a keypress should enter Chromium-native hinting."""
-        return (mode == usertypes.KeyMode.normal and
-                self._is_chromium_hint_key(event))
-
-    def _is_chromium_hint_key(self, event: QKeyEvent) -> bool:
-        """Return whether a keypress is bound to Chromium-native hinting."""
-        if event.key() != Qt.Key.Key_F:
-            return False
-        if event.text().lower() != 'f':
-            return False
-        if machinery.IS_QT5:  # FIXME:v4 needed for Qt 5 typing
-            no_modifier = cast(Qt.KeyboardModifiers,
-                               Qt.KeyboardModifier.NoModifier)
-        else:
-            no_modifier = Qt.KeyboardModifier.NoModifier
-        return event.modifiers() == no_modifier
 
     def _handle_keyrelease(self, event: QKeyEvent) -> bool:
         """Handle filtering of KeyRelease events.
@@ -450,8 +346,6 @@ class ModeManager(QObject):
 
         log.modes.debug("Entering mode {}{}".format(
             mode, '' if reason is None else ' (reason: {})'.format(reason)))
-        if mode != usertypes.KeyMode.normal and self._chromium_hint_passthrough:
-            self._chromium_hint_passthrough = False
         if mode not in self.parsers:
             raise ValueError("No keyparser for mode {}".format(mode))
         if self.mode == mode or (self.mode in PROMPT_MODES and

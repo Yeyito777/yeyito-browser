@@ -74,8 +74,6 @@ public:
 
     void scheduleApplyRecursively();
 
-    WebEngineSettings *rootSettings();
-
     bool getJavaScriptCanOpenWindowsAutomatically();
 
 private:

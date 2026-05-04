@@ -1215,9 +1215,8 @@ class FontBase(BaseType):
     def set_defaults(cls, default_family: list[str], default_size: str) -> None:
         """Make sure default_family/default_size are available.
 
-        JetBrains Mono is the canonical default via fonts.default_family. If
-        that setting is explicitly empty, a system-specific monospace fallback
-        is used.
+        If the given family value (fonts.default_family in the config) is
+        unset, a system-specific default monospace font is used.
         """
         if default_family:
             families = configutils.FontFamilies(default_family)

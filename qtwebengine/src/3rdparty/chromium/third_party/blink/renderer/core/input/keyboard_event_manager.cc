@@ -35,7 +35,6 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation_controller.h"
-#include "third_party/blink/renderer/core/yeyito_hints/hints.h"
 #include "third_party/blink/renderer/platform/keyboard_codes.h"
 #include "third_party/blink/renderer/platform/widget/frame_widget.h"
 #include "third_party/blink/renderer/platform/windows_keyboard_codes.h"
@@ -231,12 +230,6 @@ WebInputEventResult KeyboardEventManager::KeyEvent(
        initial_key_event.GetType() == WebInputEvent::Type::kRawKeyDown)) {
     LocalFrame::NotifyUserActivation(
         frame_, mojom::blink::UserActivationNotificationType::kInteraction);
-  }
-
-  WebInputEventResult hint_result =
-      Hints::From(*frame_).HandleKeyEvent(initial_key_event);
-  if (hint_result != WebInputEventResult::kNotHandled) {
-    return hint_result;
   }
 
   // Don't expose key events to pages while browsing on the drive-by web. This

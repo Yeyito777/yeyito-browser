@@ -105,18 +105,19 @@ def _set_process_name(basedir):
         pass
 
 
-CANONICAL_FONT_FAMILY = 'JetBrains Mono'
+TERMINAL_FONT_FAMILY = 'JetBrains Mono'
 
 
-def _set_canonical_app_font(app: QApplication) -> None:
-    """Force the UI font to the app's canonical font when available."""
+def _set_global_monospace_font(app: QApplication) -> None:
+    """Force the UI font to the terminal font while keeping the current size."""
     font = app.font()
-    if CANONICAL_FONT_FAMILY in QFontDatabase.families():
-        font.setFamily(CANONICAL_FONT_FAMILY)
+    if TERMINAL_FONT_FAMILY in QFontDatabase.families():
+        font.setFamily(TERMINAL_FONT_FAMILY)
     else:
         fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         font.setFamily(fixed_font.family())
     app.setFont(font)
+
 
 
 def _basedir_in_use(basedir):
@@ -820,7 +821,7 @@ class Application(QApplication):
         log.init.debug("Qt arguments: {}".format(qt_args[1:]))
         startup_checkpoint("  QApplication.__init__() — super().__init__")
         super().__init__(qt_args)
-        _set_canonical_app_font(self)
+        _set_global_monospace_font(self)
         startup_checkpoint("  QApplication.__init__() done")
 
         objects.args = args

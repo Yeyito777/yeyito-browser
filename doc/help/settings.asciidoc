@@ -225,7 +225,7 @@
 |<<fonts.completion.entry,fonts.completion.entry>>|Font used in the completion widget.
 |<<fonts.contextmenu,fonts.contextmenu>>|Font used for the context menu.
 |<<fonts.debug_console,fonts.debug_console>>|Font used for the debugging console.
-|<<fonts.default_family,fonts.default_family>>|Default font families to use. JetBrains Mono is the canonical font family for this app.
+|<<fonts.default_family,fonts.default_family>>|Default font families to use.
 |<<fonts.default_size,fonts.default_size>>|Default font size to use.
 |<<fonts.downloads,fonts.downloads>>|Font used for the downloadbar.
 |<<fonts.hints,fonts.hints>>|Font used for the hints.
@@ -460,6 +460,8 @@ The following modes are available:
   locations or when invoked from JavaScript.
 
 * yesno: Entered when there's a yes/no prompt displayed.
+* caret: Entered when pressing the `v` mode, used to select text using the
+  keyboard.
 
 * register: Entered when qutebrowser is waiting for a register name/key for
   commands like `:set-mark`.
@@ -642,6 +644,7 @@ Default:
 * +pass:[Ss]+: +pass:[set]+
 * +pass:[T]+: +pass:[cmd-set-text -sr :tab-focus]+
 * +pass:[U]+: +pass:[undo -w]+
+* +pass:[V]+: +pass:[mode-enter caret ;; selection-toggle --line]+
 * +pass:[ZQ]+: +pass:[quit]+
 * +pass:[ZZ]+: +pass:[quit --save]+
 * +pass:[[[]+: +pass:[navigate prev]+
@@ -715,6 +718,7 @@ Default:
 * +pass:[tsh]+: +pass:[config-cycle -p -t -u *://{url:host}/* content.javascript.enabled ;; reload]+
 * +pass:[tsu]+: +pass:[config-cycle -p -t -u {url} content.javascript.enabled ;; reload]+
 * +pass:[u]+: +pass:[undo]+
+* +pass:[v]+: +pass:[mode-enter caret]+
 * +pass:[wB]+: +pass:[cmd-set-text -s :bookmark-load -w]+
 * +pass:[wIf]+: +pass:[devtools-focus]+
 * +pass:[wIh]+: +pass:[devtools left]+
@@ -3077,13 +3081,13 @@ Default: +pass:[default_size default_family]+
 
 [[fonts.default_family]]
 === fonts.default_family
-Default font families to use. JetBrains Mono is the canonical font family for this app.
+Default font families to use.
 Whenever "default_family" is used in a font setting, it's replaced with the fonts listed here.
-If explicitly set to an empty value, a system-specific monospace fallback is used.
+If set to an empty value, a system-specific monospace default is used.
 
 Type: <<types,List of Font&#44; or Font>>
 
-Default: +pass:[JetBrains Mono]+
+Default: empty
 
 [[fonts.default_size]]
 === fonts.default_size
@@ -3149,7 +3153,7 @@ Font used for prompts.
 
 Type: <<types,Font>>
 
-Default: +pass:[default_size default_family]+
+Default: +pass:[default_size sans-serif]+
 
 [[fonts.statusbar]]
 === fonts.statusbar
@@ -3182,7 +3186,7 @@ If set to null, the Qt default is used.
 
 Type: <<types,Font>>
 
-Default: +pass:[default_size default_family]+
+Default: empty
 
 [[fonts.web.family.cursive]]
 === fonts.web.family.cursive
@@ -3192,7 +3196,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: +pass:[JetBrains Mono]+
+Default: empty
 
 [[fonts.web.family.fantasy]]
 === fonts.web.family.fantasy
@@ -3202,7 +3206,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: +pass:[JetBrains Mono]+
+Default: empty
 
 [[fonts.web.family.fixed]]
 === fonts.web.family.fixed
@@ -3212,7 +3216,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: +pass:[JetBrains Mono]+
+Default: empty
 
 [[fonts.web.family.sans_serif]]
 === fonts.web.family.sans_serif
@@ -3222,7 +3226,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: +pass:[JetBrains Mono]+
+Default: empty
 
 [[fonts.web.family.serif]]
 === fonts.web.family.serif
@@ -3232,7 +3236,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: +pass:[JetBrains Mono]+
+Default: empty
 
 [[fonts.web.family.standard]]
 === fonts.web.family.standard
@@ -3242,7 +3246,7 @@ This setting supports link:configuring{outfilesuffix}#patterns[URL patterns].
 
 Type: <<types,FontFamily>>
 
-Default: +pass:[JetBrains Mono]+
+Default: empty
 
 [[fonts.web.size.default]]
 === fonts.web.size.default
@@ -4498,7 +4502,7 @@ Valid values:
  * +multiple+: Hide the tab bar if only one tab is open.
  * +switching+: Show the tab bar when switching tabs.
 
-Default: +pass:[never]+
+Default: +pass:[always]+
 
 [[tabs.show_switching_delay]]
 === tabs.show_switching_delay

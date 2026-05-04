@@ -41,27 +41,15 @@ class EventFilter(QObject):
     def shutdown(self) -> None:
         objects.qapp.removeEventFilter(self)
 
-    def _focus_is_webengine_page(self) -> bool:
-        """Return whether keyboard focus is currently inside the web page.
-
-        Chromium owns those events now. qutebrowser's Python mode manager still
-        owns non-page UI widgets such as the command line, prompts, menus, etc.
-        """
-        widget = objects.qapp.focusWidget()
-        while widget is not None:
-            cls = type(widget)
-            name = cls.__name__
-            module = getattr(cls, '__module__', '')
-            if (name == 'WebEngineView' or
-                    'RenderWidgetHostViewQt' in name or
-                    name.startswith('QWebEngine') or
-                    module == 'qutebrowser.browser.webengine.webview'):
-                return True
-            widget = widget.parentWidget()
-        return False
-
     def _handle_key_event(self, event: QKeyEvent) -> bool:
-        """Handle a key press/release event for non-page qutebrowser UI."""
+        """Handle a key press/release event.
+
+        Args:
+            event: The QEvent which is about to be delivered.
+
+        Return:
+            True if the event should be filtered, False if it's passed through.
+        """
         if objects.qapp.activePopupWidget() is not None:
             # A popup (e.g. context menu) is open — let it handle its own
             # keyboard events instead of routing them through the mode manager.
@@ -70,8 +58,6 @@ class EventFilter(QObject):
         if active_window not in objreg.window_registry.values():
             # Some other window (print dialog, etc.) is focused so we pass the
             # event through.
-            return False
-        if self._focus_is_webengine_page():
             return False
         try:
             man = modeman.instance('current')
@@ -126,9 +112,9 @@ class EventFilter(QObject):
         if not self._activated:
             return False
 
-        key_event = cast(QKeyEvent, event)
+        handler = self._handlers[ev_type]
         try:
-            return self._handle_key_event(key_event)
+            return handler(cast(QKeyEvent, event))
         except:
             # If there is an exception in here and we leave the eventfilter
             # activated, we'll get an infinite loop and a stack overflow.

@@ -6,8 +6,8 @@ import("//build/buildflag_header.gni")
 import("//build/config/arm.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/dcheck_always_on.gni")
-import("//build/config/jumbo.gni")
 import("//build/config/python.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//build/nocompile.gni")
 import("//build/toolchain/toolchain.gni")
@@ -82,7 +82,6 @@ import("//third_party/blink/renderer/core/view_transition/build.gni")
 import("//third_party/blink/renderer/core/workers/build.gni")
 import("//third_party/blink/renderer/core/xml/build.gni")
 import("//third_party/blink/renderer/core/xmlhttprequest/build.gni")
-import("//third_party/blink/renderer/core/yeyito_hints/build.gni")
 import("//third_party/blink/renderer/platform/platform_generated.gni")
 import("//third_party/protobuf/proto_library.gni")
 
@@ -176,7 +175,7 @@ source_set("core_common") {
 
 jumbo_source_set("prerequisites") {
   public_deps = [
-    "//services/network/public/cpp",
+    "//services/network/public/cpp:cpp",
     "//services/network/public/mojom",
     "//services/service_manager/public/cpp",
     "//skia",
@@ -325,7 +324,6 @@ jumbo_component("core") {
   sources += rebase_path(blink_core_sources_typed_arrays, "", "typed_arrays")
   sources += rebase_path(blink_core_sources_url, "", "url")
   sources += rebase_path(blink_core_sources_workers, "", "workers")
-  sources += rebase_path(blink_core_sources_yeyito_hints, "", "yeyito_hints")
   sources += rebase_path(blink_core_sources_xml, "", "xml")
   sources +=
       rebase_path(blink_core_sources_xmlhttprequest, "", "xmlhttprequest")
@@ -355,7 +353,7 @@ jumbo_component("core") {
     "//third_party/blink/renderer/platform/wtf",
     "//third_party/re2",
     "//ui/accessibility:ax_base",
-    "//ui/base",
+    "//ui/base:base",
     "//ui/base:ui_data_pack",
     "//ui/base/cursor",
     "//ui/base/dragdrop/mojom:mojom_blink_headers",
@@ -386,7 +384,7 @@ jumbo_component("core") {
     "//components/web_package",
     "//gin",
     "//gpu/config",
-    "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/bindings:bindings",
     "//mojo/public/cpp/system",
     "//printing/buildflags",
     "//printing/mojom:mojom_blink",
@@ -419,7 +417,7 @@ jumbo_component("core") {
   }
 
   if (is_win) {
-    deps += [ "//components/stylus_handwriting/win" ]
+    deps += [ "//components/stylus_handwriting/win:win" ]
   }
 
   if (enable_printing || enable_printing_tests) {
@@ -435,38 +433,18 @@ jumbo_component("core") {
     "//third_party/blink/renderer/core/url_pattern",
     "//third_party/blink/renderer/core/xml:xpath_generated",
   ]
-  jumbo_excluded_sources = []
-  jumbo_excluded_sources +=
-      rebase_path([ "attribution_reporting_to_mojom.cc" ], "", "fetch")
-  jumbo_excluded_sources +=
-      rebase_path([ "attribution_src_loader.cc" ], "", "frame")
-  jumbo_excluded_sources +=
-      rebase_path([ "cached_permission_status.cc" ], "", "frame")
-  jumbo_excluded_sources +=
-      rebase_path([ "html_permission_element.cc" ], "", "html")
-  jumbo_excluded_sources +=
-      rebase_path([ "frame_fetch_context.cc" ], "", "loader")
+  jumbo_excluded_sources = [ ]
+  jumbo_excluded_sources += rebase_path([ "attribution_reporting_to_mojom.cc" ], "", "fetch")
+  jumbo_excluded_sources += rebase_path([ "attribution_src_loader.cc" ], "", "frame")
+  jumbo_excluded_sources += rebase_path([ "cached_permission_status.cc" ], "", "frame")
+  jumbo_excluded_sources += rebase_path([ "html_permission_element.cc" ], "", "html")
+  jumbo_excluded_sources += rebase_path([ "frame_fetch_context.cc" ], "", "loader")
   jumbo_excluded_sources += rebase_path([ "image_loader.cc" ], "", "loader")
   jumbo_excluded_sources += rebase_path([ "create_window.cc" ], "", "page")
-  jumbo_excluded_sources +=
-      rebase_path([ "link_highlight_impl.cc" ], "", "paint")
+  jumbo_excluded_sources += rebase_path([ "link_highlight_impl.cc" ], "", "paint")
   jumbo_excluded_sources += rebase_path([ "scroll_animator.cc" ], "", "scroll")
-  jumbo_excluded_sources +=
-      rebase_path([ "soft_navigation_heuristics.cc" ], "", "timing")
-
-  # Keep local qutebrowser/Chromium hinting work out of Blink jumbo files so
-  # normal edit-build-test cycles recompile only the hinting translation units.
-  jumbo_excluded_sources += rebase_path([
-                                          "click_hints.cc",
-                                          "hints.cc",
-                                          "hover_hints.cc",
-                                          "labels.cc",
-                                          "overlay.cc",
-                                        ],
-                                        "",
-                                        "yeyito_hints")
-  jumbo_excluded_sources +=
-      [ "//third_party/blink/renderer/bindings/core/v8/script_decoder.cc" ]
+  jumbo_excluded_sources += rebase_path([ "soft_navigation_heuristics.cc" ], "", "timing")
+  jumbo_excluded_sources += [ "//third_party/blink/renderer/bindings/core/v8/script_decoder.cc" ]
 
   public_configs = [ ":core_include_dirs" ]
 
@@ -514,9 +492,9 @@ blink_core_sources("core_hot") {
     "//third_party/blink/public:image_resources_grit",
     "//third_party/blink/public/strings",
     "//third_party/blink/renderer/bindings:buildflags",
-    "//third_party/blink/renderer/core/animation",
+    "//third_party/blink/renderer/core/animation:animation",
     "//third_party/blink/renderer/core/exported",
-    "//third_party/blink/renderer/core/probe",
+    "//third_party/blink/renderer/core/probe:probe",
   ]
 
   if (enable_vectorized_html_scanning) {
@@ -641,7 +619,7 @@ jumbo_source_set("testing") {
     "timing/internals_profiler.h",
   ]
 
-  public_deps = [ "//testing/gmock" ]
+  public_deps = [ "//testing/gmock:gmock" ]
 }
 
 if (is_ios) {
@@ -1349,7 +1327,7 @@ target("jumbo_" + core_generated_target_type, "core_generated") {
   }
   deps = [
     "//services/metrics/public/cpp:ukm_builders",
-    "//third_party/blink/renderer/core/probe",
+    "//third_party/blink/renderer/core/probe:probe",
   ]
   public_deps = [ ":all_generators" ]
 
@@ -1522,8 +1500,8 @@ jumbo_source_set("unit_tests") {
     "//build:chromeos_buildflags",
     "//cc",
     "//components/autofill/core/common:features",
-    "//components/page_load_metrics/browser",
-    "//components/paint_preview/common",
+    "//components/page_load_metrics/browser:browser",
+    "//components/paint_preview/common:common",
     "//components/shared_highlighting/core/common",
     "//components/shared_highlighting/core/common:data_driven_testing",
     "//components/ukm:test_support",
@@ -1562,7 +1540,7 @@ jumbo_source_set("unit_tests") {
   ]
 
   if (is_win) {
-    deps += [ "//components/stylus_handwriting/win" ]
+    deps += [ "//components/stylus_handwriting/win:win" ]
   }
 
   if (enable_nocompile_tests) {

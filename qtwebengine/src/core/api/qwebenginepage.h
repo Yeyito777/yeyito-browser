@@ -349,9 +349,6 @@ Q_SIGNALS:
 
     void linkHovered(const QString &url);
     void selectionChanged();
-    void qutebrowserCommandRequested(const QString &command);
-    void qutebrowserModeChanged(const QString &oldMode, const QString &newMode);
-    void qutebrowserStatusChanged(const QString &mode, const QString &keychain, const QString &count);
     void geometryChangeRequested(const QRect &geom);
     void windowCloseRequested();
 

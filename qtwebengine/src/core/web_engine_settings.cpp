@@ -498,14 +498,6 @@ void WebEngineSettings::scheduleApplyRecursively()
     }
 }
 
-WebEngineSettings *WebEngineSettings::rootSettings()
-{
-    WebEngineSettings *settings = this;
-    while (settings->parentSettings)
-        settings = settings->parentSettings;
-    return settings;
-}
-
 bool WebEngineSettings::getJavaScriptCanOpenWindowsAutomatically()
 {
     return testAttribute(QWebEngineSettings::JavascriptCanOpenWindows);

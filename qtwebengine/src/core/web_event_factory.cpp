@@ -58,20 +58,6 @@ namespace QtWebEngineCore {
 
 using namespace blink;
 
-namespace {
-
-// Temporary qutebrowser -> Chromium migration bridge. qutebrowser marks
-// synthetic key events with private native-modifier bits. QtWebEngine mirrors
-// those into private WebInputEvent modifiers so Blink-side features can trust
-// qutebrowser's current mode decision instead of guessing from DOM focus.
-// Remove when the qutebrowser mode/keybinding layer has moved into Chromium.
-constexpr quint32 kQutebrowserBrowserCommandNativeModifier = 0x40000000;
-constexpr quint32 kQutebrowserPageInputNativeModifier = 0x20000000;
-constexpr int kQutebrowserBrowserCommandWebModifier = 1 << 27;
-constexpr int kQutebrowserPageInputWebModifier = 1 << 28;
-
-} // namespace
-
 enum class KeyboardDriver { Unknown, Windows, Cocoa, Xkb, Evdev };
 
 static KeyboardDriver keyboardDriverImpl()
@@ -1681,13 +1667,8 @@ input::NativeWebKeyboardEvent WebEventFactory::toWebKeyboardEvent(QKeyEvent *ev)
     webKitEvent.SetTimeStamp(base::TimeTicks::Now());
     bool isBackTabWithoutModifier =
             ev->key() == Qt::Key_Backtab && ev->modifiers() == Qt::NoModifier;
-    int modifiers = isBackTabWithoutModifier ? WebInputEvent::kShiftKey
-                                             : modifiersForEvent(ev);
-    if (ev->nativeModifiers() & kQutebrowserBrowserCommandNativeModifier)
-        modifiers |= kQutebrowserBrowserCommandWebModifier;
-    if (ev->nativeModifiers() & kQutebrowserPageInputNativeModifier)
-        modifiers |= kQutebrowserPageInputWebModifier;
-    webKitEvent.SetModifiers(modifiers);
+    webKitEvent.SetModifiers(isBackTabWithoutModifier ? WebInputEvent::kShiftKey
+                                                      : modifiersForEvent(ev));
     webKitEvent.SetType(webEventTypeForEvent(ev));
 
     int qtKey = qtKeyForKeyEvent(ev);

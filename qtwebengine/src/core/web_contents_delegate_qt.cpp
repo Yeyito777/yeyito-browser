@@ -42,7 +42,6 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/file_select_listener.h"
 #include "content/public/browser/invalidate_type.h"
-#include "content/public/browser/keyboard_event_processing_result.h"
 #include "content/public/browser/media_stream_request.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
@@ -58,7 +57,6 @@
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom.h"
 
 #include <QDesktopServices>
-#include <QKeyEvent>
 #include <QTimer>
 #include <QWindow>
 
@@ -84,7 +82,6 @@ WebContentsDelegateQt::WebContentsDelegateQt(content::WebContents *webContents, 
     , m_findTextHelper(new FindTextHelper(webContents, adapterClient))
     , m_loadingState(determineLoadingState(webContents))
     , m_frameFocusedObserver(adapterClient)
-    , m_qutebrowserKeyDispatcher(this)
 {
     webContents->SetDelegate(this);
     Observe(webContents);
@@ -265,11 +262,6 @@ void WebContentsDelegateQt::LoadProgressChanged(double progress)
     }
 }
 
-content::KeyboardEventProcessingResult WebContentsDelegateQt::PreHandleKeyboardEvent(content::WebContents *source, const input::NativeWebKeyboardEvent &event)
-{
-    return m_qutebrowserKeyDispatcher.preHandleKeyboardEvent(source, event);
-}
-
 bool WebContentsDelegateQt::HandleKeyboardEvent(content::WebContents *, const input::NativeWebKeyboardEvent &event)
 {
     Q_ASSERT(!event.skip_if_unhandled);
@@ -384,7 +376,6 @@ void WebContentsDelegateQt::DidStartNavigation(content::NavigationHandle *naviga
     if (!navigation_handle->IsInMainFrame() || navigation_handle->IsSameDocument())
         return;
 
-    m_qutebrowserKeyDispatcher.clearRendererMode();
     m_loadingInfo.url = toQt(navigation_handle->GetURL());
     // IsErrorPage is only set after navigation commit, so check it otherwise: error page shouldn't have navigation entry
     bool isErrorPage = m_loadingInfo.triggersErrorPage && !navigation_handle->GetNavigationEntry();
@@ -681,10 +672,6 @@ bool WebContentsDelegateQt::DidAddMessageToConsole(content::WebContents *source,
                                                    const std::u16string &message, int32_t line_no, const std::u16string &source_id)
 {
     Q_UNUSED(source);
-    if (message == u"__qutebrowser_native_hints_stopped__") {
-        m_qutebrowserKeyDispatcher.clearRendererMode();
-        return true;
-    }
     m_viewClient->javaScriptConsoleMessage(mapToJavascriptConsoleMessageLevel(log_level), toQt(message), static_cast<int>(line_no), toQt(source_id));
     return false;
 }

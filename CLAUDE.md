@@ -10,7 +10,6 @@ You're in my fork of qutebrowser's source. This fork includes a custom build of 
 | When user mentions... | Read this first |
 |-----------------------|-----------------|
 | **shader**, element shader, colors, CSS transforms | `reference/element-shader.md` |
-| **fonts**, typography, visual style, JetBrains Mono | `reference/style.md` |
 | **build**, install, compile | `reference/build.md` |
 | **bindings**, SIP, PyQt6-WebEngine, enum, WebAttribute | `reference/build.md` (Phase 4) |
 | **new setting**, WebAttribute, mojom, IPC, preferences | `reference/adding-a-web-setting.md` |
@@ -29,12 +28,6 @@ This is a **monorepo** — qtwebengine, qtwebengine-chromium, and pyqt6-webengin
 - `reference/build.md` - Build process, directory structure, verification
 - `reference/adding-a-web-setting.md` - Full pipeline for adding a new QWebEngineSettings attribute (10 touch points across 9 files)
 - `reference/dependencies.md` - System packages, what we build vs use from system
-
-### Style Canon
-
-JetBrains Mono is the canonical font family for this app. Use it for new UI,
-Chromium/Blink overlays, and default font settings unless a specific
-compatibility constraint requires a monospace fallback. See `reference/style.md`.
 
 ### Quick Reference
 
